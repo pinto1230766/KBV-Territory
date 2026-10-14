@@ -34,6 +34,8 @@ import { AssignReturnModal } from './components/AssignReturnModal';
 import { AnnotationCanvasModal } from './components/AnnotationCanvasModal';
 import { PrintTerritoryModal } from './components/PrintTerritoryModal';
 import { RequestTerritoryModal } from './components/RequestTerritoryModal';
+import { AccountTerritoriesView } from './components/AccountTerritoriesView';
+import { FileSpreadsheet } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [territories, setTerritories] = useState<Territory[]>([]);
@@ -60,7 +62,7 @@ export const App: React.FC = () => {
   const [returningTerritory, setReturningTerritory] = useState<Territory | null>(null);
   const [annotatingTerritory, setAnnotatingTerritory] = useState<Territory | null>(null);
 
-  const [currentView, setCurrentView] = useState<'list' | 'map' | 'history'>('list');
+  const [currentView, setCurrentView] = useState<'list' | 'map' | 'history' | 'account'>('list');
   const [selectedTerritory, setSelectedTerritory] = useState<Territory | null>(null);
   const [shareTerritory, setShareTerritory] = useState<Territory | null>(null);
   const [editingBoundaryTerritory, setEditingBoundaryTerritory] = useState<Territory | null>(null);
@@ -101,10 +103,14 @@ export const App: React.FC = () => {
     loadAllData();
   }, []);
 
-  // Détection des URL directes / QR Code (ex: #territory=terr-01)
+  // Détection des URL directes / QR Code (ex: #territory=terr-01 ou #account)
   useEffect(() => {
-    const hash = window.location.hash;
-    if (hash.includes('territory=')) {
+    const hash = window.location.hash.toLowerCase();
+    const pathname = window.location.pathname.toLowerCase();
+    if (hash.includes('account') || pathname.includes('account') || hash.includes('territories')) {
+      setCurrentView('account');
+      setSelectedTerritory(null);
+    } else if (hash.includes('territory=')) {
       const terrId = hash.split('territory=')[1];
       const target = territories.find(t => t.id === terrId);
       if (target) {
@@ -519,6 +525,25 @@ export const App: React.FC = () => {
               <Clock size={16} />
               Historique ({visits.length})
             </button>
+
+            <button
+              onClick={() => {
+                setSelectedTerritory(null);
+                setCurrentView('account');
+              }}
+              className={`btn ${currentView === 'account' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ 
+                padding: '0.45rem 0.85rem', 
+                fontSize: '0.85rem',
+                border: currentView === 'account' ? undefined : '1px solid rgba(2, 132, 199, 0.4)',
+                background: currentView === 'account' ? '#0284c7' : 'rgba(2, 132, 199, 0.1)',
+                color: currentView === 'account' ? '#fff' : '#38bdf8'
+              }}
+              title="Portail Officiel d'Administration des Territoires (Account/Territories)"
+            >
+              <FileSpreadsheet size={16} />
+              Responsable (Account)
+            </button>
           </nav>
 
           {/* Actions à droite */}
@@ -617,6 +642,27 @@ export const App: React.FC = () => {
             territories={territories}
             onDeleteVisit={handleDeleteVisit}
             onSelectTerritory={(t) => setSelectedTerritory(t)}
+          />
+        ) : currentView === 'account' ? (
+          <AccountTerritoriesView
+            territories={territories}
+            locations={locations}
+            publishers={publishers}
+            serviceGroups={serviceGroups}
+            settings={settings}
+            onOpenTerritory={(t) => {
+              setSelectedTerritory(t);
+              setCurrentView('list');
+            }}
+            onAssignTerritory={(t) => setAssigningTerritory(t)}
+            onReturnTerritory={(t) => setReturningTerritory(t)}
+            onEditBoundary={(t) => setEditingBoundaryTerritory(t)}
+            onPrintTerritory={(t) => setPrintingTerritory(t)}
+            onRefreshData={loadAllData}
+            onSwitchToPublisherView={() => {
+              setSelectedTerritory(null);
+              setCurrentView('list');
+            }}
           />
         ) : (
           <TerritoryList
