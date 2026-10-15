@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { 
   X, 
   Download, 
@@ -17,10 +17,13 @@ import {
   Bug, 
   Trash2, 
   ExternalLink,
-  Info
+  Info,
+  Calendar
 } from 'lucide-react';
 import { StorageService } from '../services/storage';
 import type { CongregationSettings } from '../types';
+import { useTranslation } from '../i18n/LanguageContext';
+import type { LanguageCode } from '../i18n/translations';
 
 interface SettingsModalProps {
   settings: CongregationSettings;
@@ -35,10 +38,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onDataImported,
   onClose
 }) => {
+  const { t, language, setLanguage } = useTranslation();
   const [localSettings, setLocalSettings] = useState<CongregationSettings>({
     ...settings,
     publisherEmail: settings.publisherEmail || 'jean.dupont@congre.org',
     showMapPreview: settings.showMapPreview !== undefined ? settings.showMapPreview : true,
+    defaultAssignmentMonths: settings.defaultAssignmentMonths || 4,
     appVersion: settings.appVersion || '4.2.1-fr'
   });
 
@@ -48,13 +53,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [bugReportGenerated, setBugReportGenerated] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    setLocalSettings(prev => ({
+      ...prev,
+      ...settings
+    }));
+  }, [settings]);
+
   const languages = [
     { code: 'fr', label: 'Français', flag: '🇫🇷', native: 'Français (France)' },
     { code: 'pt', label: 'Português', flag: '🇵🇹', native: 'Português (Portugal/Brasil)' },
-    { code: 'kea', label: 'Kriolu kabuberdiánu', flag: '🇨🇻', native: 'Cap-Verdien (Kabuverdianu)' },
+    { code: 'kea', label: 'Kriolu kabuverdianu', flag: '🇨🇻', native: 'Cap-Verdien (Kabuverdianu)' },
     { code: 'en', label: 'English', flag: '🇬🇧', native: 'English' },
     { code: 'es', label: 'Español', flag: '🇪🇸', native: 'Español' }
   ];
+
+  const handleLanguageChange = (langCode: string) => {
+    const updated = { ...localSettings, language: langCode };
+    setLocalSettings(updated);
+    setLanguage(langCode as LanguageCode);
+    onUpdateSettings(updated);
+  };
+
+  const handleThemeChange = (th: 'dark' | 'light' | 'system') => {
+    const updated = { ...localSettings, theme: th };
+    setLocalSettings(updated);
+    onUpdateSettings(updated);
+    const resolved = th === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : th;
+    document.documentElement.setAttribute('data-theme', resolved);
+  };
 
   const handleSave = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -65,16 +92,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleLogout = () => {
     if (confirm('Voulez-vous vraiment vous déconnecter de la session active ? Les données locales resteront sécurisées sur cet appareil.')) {
-      setLocalSettings(prev => ({
-        ...prev,
-        publisherName: 'Invité / Non connecté',
-        publisherEmail: ''
-      }));
-      onUpdateSettings({
+      const updated: CongregationSettings = {
         ...localSettings,
         publisherName: 'Invité / Non connecté',
         publisherEmail: ''
-      });
+      };
+      setLocalSettings(updated);
+      onUpdateSettings(updated);
       alert('Vous avez été déconnecté avec succès.');
     }
   };
@@ -115,7 +139,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleClearCache = async () => {
     if (confirm('Vider le cache de l\'application ? Cela nettoiera la mémoire tampon des cartes et libérera de l\'espace.')) {
-      // Nettoyage des clés temporaires du cache
       try {
         const keysToRemove = Object.keys(localStorage).filter(k => k.startsWith('th_cache_') || k.startsWith('leaflet_'));
         keysToRemove.forEach(k => localStorage.removeItem(k));
@@ -179,11 +202,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }}>
       <div className="glass-panel" style={{ 
         width: '100%', 
-        maxWidth: '560px', 
-        maxHeight: '90vh',
+        maxWidth: '580px', 
+        maxHeight: '92vh',
         display: 'flex',
         flexDirection: 'column',
-        background: '#0d131f', 
+        background: 'var(--bg-secondary)', 
         position: 'relative',
         borderRadius: '16px',
         border: '1px solid var(--border-subtle)',
@@ -204,7 +227,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <Settings size={22} />
             </div>
             <div>
-              <h2 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0 }}>Réglages & Paramètres</h2>
+              <h2 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>{t.settings}</h2>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', margin: 0 }}>KBV Territory</p>
             </div>
           </div>
@@ -221,16 +244,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           display: 'flex', 
           gap: '0.25rem', 
           padding: '0.5rem 1rem', 
-          background: 'rgba(0, 0, 0, 0.25)', 
+          background: 'var(--bg-tertiary)', 
           borderBottom: '1px solid var(--border-subtle)',
           overflowX: 'auto'
         }}>
           {[
-            { id: 'general', label: 'Général', icon: <Settings size={14} /> },
-            { id: 'account', label: 'Proclamateur', icon: <User size={14} /> },
-            { id: 'privacy', label: 'RGPD & CNIL', icon: <ShieldCheck size={14} /> },
-            { id: 'data', label: 'Sauvegardes', icon: <Database size={14} /> },
-            { id: 'about', label: 'À propos', icon: <Info size={14} /> },
+            { id: 'general', label: t.tabGeneral, icon: <Settings size={14} /> },
+            { id: 'account', label: t.tabPublisher, icon: <User size={14} /> },
+            { id: 'privacy', label: t.tabPrivacy, icon: <ShieldCheck size={14} /> },
+            { id: 'data', label: t.tabBackups, icon: <Database size={14} /> },
+            { id: 'about', label: t.tabAbout, icon: <Info size={14} /> },
           ].map(tab => (
             <button
               key={tab.id}
@@ -261,53 +284,135 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           
           {/* ONGLET 1: GÉNÉRAL */}
           {activeTab === 'general' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
-                  Nom de la Congrégation / Assemblée
+                  {t.congregationName}
                 </label>
                 <input 
                   type="text" 
                   value={localSettings.congregationName}
-                  onChange={(e) => setLocalSettings({ ...localSettings, congregationName: e.target.value })}
-                  style={{ width: '100%', padding: '0.6rem 0.75rem', background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'white', fontSize: '0.85rem' }}
+                  onChange={(e) => {
+                    const updated = { ...localSettings, congregationName: e.target.value };
+                    setLocalSettings(updated);
+                    onUpdateSettings(updated);
+                  }}
+                  style={{ width: '100%', padding: '0.6rem 0.75rem', background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
                 />
               </div>
 
               {/* Choix de langues multilingues */}
               <div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                  <Globe size={15} color="#38bdf8" /> Langue de l'application
+                  <Globe size={15} color="#38bdf8" /> {t.appLanguage}
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.5rem' }}>
-                  {languages.map(lang => (
+                  {languages.map(lang => {
+                    const isSelected = (language === lang.code) || (localSettings.language === lang.code);
+                    return (
+                      <button
+                        key={lang.code}
+                        type="button"
+                        onClick={() => handleLanguageChange(lang.code)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          padding: '0.6rem 0.75rem',
+                          borderRadius: '8px',
+                          background: isSelected ? 'rgba(56, 189, 248, 0.18)' : 'var(--bg-tertiary)',
+                          border: isSelected ? '1px solid #38bdf8' : '1px solid var(--border-subtle)',
+                          color: isSelected ? '#38bdf8' : 'var(--text-primary)',
+                          fontSize: '0.8rem',
+                          cursor: 'pointer',
+                          textAlign: 'left'
+                        }}
+                      >
+                        <span style={{ fontSize: '1.2rem' }}>{lang.flag}</span>
+                        <div style={{ overflow: 'hidden' }}>
+                          <div style={{ fontWeight: isSelected ? 700 : 500 }}>{lang.label}</div>
+                          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                            {lang.native}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Thème clair / sombre / système */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
+                  {t.displayTheme}
+                </label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  {([
+                    { id: 'dark', label: t.themeDark },
+                    { id: 'light', label: t.themeLight },
+                    { id: 'system', label: t.themeSystem }
+                  ] as const).map(th => (
                     <button
-                      key={lang.code}
+                      key={th.id}
                       type="button"
-                      onClick={() => setLocalSettings({ ...localSettings, language: lang.code })}
+                      onClick={() => handleThemeChange(th.id)}
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        padding: '0.55rem 0.75rem',
-                        borderRadius: '8px',
-                        background: localSettings.language === lang.code ? 'rgba(56, 189, 248, 0.18)' : 'var(--bg-tertiary)',
-                        border: localSettings.language === lang.code ? '1px solid #38bdf8' : '1px solid var(--border-subtle)',
-                        color: localSettings.language === lang.code ? '#38bdf8' : 'var(--text-primary)',
+                        flex: 1,
+                        padding: '0.55rem',
+                        borderRadius: '6px',
+                        background: localSettings.theme === th.id ? 'rgba(56, 189, 248, 0.2)' : 'var(--bg-tertiary)',
+                        border: localSettings.theme === th.id ? '1px solid #38bdf8' : '1px solid var(--border-subtle)',
+                        color: localSettings.theme === th.id ? '#38bdf8' : 'var(--text-secondary)',
                         fontSize: '0.8rem',
-                        cursor: 'pointer',
-                        textAlign: 'left'
+                        fontWeight: 600,
+                        cursor: 'pointer'
                       }}
                     >
-                      <span style={{ fontSize: '1.1rem' }}>{lang.flag}</span>
-                      <div style={{ overflow: 'hidden' }}>
-                        <div style={{ fontWeight: 600 }}>{lang.label}</div>
-                        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                          {lang.native}
-                        </div>
-                      </div>
+                      {th.label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Durée par défaut d'attribution */}
+              <div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
+                  <Calendar size={15} color="#38bdf8" /> {t.defaultDueDuration}
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.45rem' }}>
+                  {[
+                    { m: 1, label: t.months1 },
+                    { m: 2, label: t.months2 },
+                    { m: 3, label: t.months3 },
+                    { m: 4, label: t.months4 },
+                    { m: 6, label: t.months6 }
+                  ].map(opt => {
+                    const isSelected = localSettings.defaultAssignmentMonths === opt.m;
+                    return (
+                      <button
+                        key={opt.m}
+                        type="button"
+                        onClick={() => {
+                          const updated = { ...localSettings, defaultAssignmentMonths: opt.m };
+                          setLocalSettings(updated);
+                          onUpdateSettings(updated);
+                        }}
+                        style={{
+                          padding: '0.5rem 0.6rem',
+                          borderRadius: '8px',
+                          background: isSelected ? 'rgba(56, 189, 248, 0.2)' : 'var(--bg-tertiary)',
+                          border: isSelected ? '1px solid #38bdf8' : '1px solid var(--border-subtle)',
+                          color: isSelected ? '#38bdf8' : 'var(--text-secondary)',
+                          fontSize: '0.75rem',
+                          fontWeight: isSelected ? 700 : 500,
+                          cursor: 'pointer',
+                          textAlign: 'center'
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -324,47 +429,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                   <Map size={18} color="#38bdf8" />
                   <div>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>Poursuite / Aperçu de la carte</div>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>{t.mapPreview}</div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                      Afficher la carte interactive miniature sur les fiches de territoires
+                      {t.mapPreviewDesc}
                     </div>
                   </div>
                 </div>
                 <input
                   type="checkbox"
                   checked={localSettings.showMapPreview}
-                  onChange={(e) => setLocalSettings({ ...localSettings, showMapPreview: e.target.checked })}
+                  onChange={(e) => {
+                    const updated = { ...localSettings, showMapPreview: e.target.checked };
+                    setLocalSettings(updated);
+                    onUpdateSettings(updated);
+                  }}
                   style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#38bdf8' }}
                 />
-              </div>
-
-              {/* Thème */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
-                  Thème d'affichage
-                </label>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  {(['dark', 'light', 'system'] as const).map(th => (
-                    <button
-                      key={th}
-                      type="button"
-                      onClick={() => setLocalSettings({ ...localSettings, theme: th })}
-                      style={{
-                        flex: 1,
-                        padding: '0.5rem',
-                        borderRadius: '6px',
-                        background: localSettings.theme === th ? 'rgba(56, 189, 248, 0.2)' : 'var(--bg-tertiary)',
-                        border: localSettings.theme === th ? '1px solid #38bdf8' : '1px solid var(--border-subtle)',
-                        color: localSettings.theme === th ? '#38bdf8' : 'var(--text-secondary)',
-                        fontSize: '0.8rem',
-                        fontWeight: 600,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {th === 'dark' ? '🌙 Sombre' : th === 'light' ? '☀️ Clair' : '💻 Système'}
-                    </button>
-                  ))}
-                </div>
               </div>
             </div>
           )}
@@ -377,7 +457,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   {localSettings.publisherName ? localSettings.publisherName[0].toUpperCase() : 'P'}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '0.95rem', fontWeight: 700 }}>{localSettings.publisherName || 'Proclamateur'}</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)' }}>{localSettings.publisherName || 'Proclamateur'}</div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <Mail size={12} /> {localSettings.publisherEmail || 'Non renseigné'}
                   </div>
@@ -386,22 +466,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
-                  Nom complet du Proclamateur
+                  {t.publisherNameLabel}
                 </label>
                 <div style={{ position: 'relative' }}>
                   <User size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 10, top: 11 }} />
                   <input 
                     type="text" 
                     value={localSettings.publisherName}
-                    onChange={(e) => setLocalSettings({ ...localSettings, publisherName: e.target.value })}
-                    style={{ width: '100%', padding: '0.6rem 0.75rem 0.6rem 2.2rem', background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'white', fontSize: '0.85rem' }}
+                    onChange={(e) => {
+                      const updated = { ...localSettings, publisherName: e.target.value };
+                      setLocalSettings(updated);
+                      onUpdateSettings(updated);
+                    }}
+                    style={{ width: '100%', padding: '0.6rem 0.75rem 0.6rem 2.2rem', background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
                   />
                 </div>
               </div>
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
-                  Adresse e-mail
+                  {t.publisherEmailLabel}
                 </label>
                 <div style={{ position: 'relative' }}>
                   <Mail size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 10, top: 11 }} />
@@ -409,8 +493,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     type="email" 
                     value={localSettings.publisherEmail || ''}
                     placeholder="exemple@domaine.com"
-                    onChange={(e) => setLocalSettings({ ...localSettings, publisherEmail: e.target.value })}
-                    style={{ width: '100%', padding: '0.6rem 0.75rem 0.6rem 2.2rem', background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'white', fontSize: '0.85rem' }}
+                    onChange={(e) => {
+                      const updated = { ...localSettings, publisherEmail: e.target.value };
+                      setLocalSettings(updated);
+                      onUpdateSettings(updated);
+                    }}
+                    style={{ width: '100%', padding: '0.6rem 0.75rem 0.6rem 2.2rem', background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
                   />
                 </div>
               </div>
@@ -435,7 +523,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     cursor: 'pointer'
                   }}
                 >
-                  <LogOut size={16} /> Se déconnecter de ce profil
+                  <LogOut size={16} /> {t.logout}
                 </button>
               </div>
             </div>
@@ -458,7 +546,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <ShieldCheck size={24} color="#38bdf8" />
                     <div>
                       <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#38bdf8' }}>
-                        Mode Conformité RGPD Strict (France / UE)
+                        {t.gdprTitle}
                       </div>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                         Règlement UE 2016/679 & Décisions CNIL
@@ -468,14 +556,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <input
                     type="checkbox"
                     checked={localSettings.gdprCompliant}
-                    onChange={(e) => setLocalSettings({ ...localSettings, gdprCompliant: e.target.checked })}
+                    onChange={(e) => {
+                      const updated = { ...localSettings, gdprCompliant: e.target.checked };
+                      setLocalSettings(updated);
+                      onUpdateSettings(updated);
+                    }}
                     style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#38bdf8' }}
                   />
                 </div>
 
                 <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.5, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   <div>
-                    <strong>• Article 9 du RGPD (Données particulières) :</strong> Interdiction totale d'enregistrer des informations révélant les opinions religieuses ou philosophiques d'une personne sans son consentement exprès.
+                    <strong>• Article 9 du RGPD :</strong> Interdiction totale d'enregistrer des informations révélant les opinions religieuses ou philosophiques d'une personne sans son consentement exprès.
                   </div>
                   <div>
                     <strong>• Interdiction du profilage individuel :</strong> Aucun nom de famille d'habitant, aucune attitude personnelle ne doit être partagée ou centralisée.
@@ -509,7 +601,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   }}
                 >
                   <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <FileText size={16} color="#38bdf8" /> Politique de Confidentialité Territory Helper
+                    <FileText size={16} color="#38bdf8" /> Politique de Confidentialité
                   </span>
                   <ExternalLink size={14} color="var(--text-muted)" />
                 </a>
@@ -550,7 +642,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="btn btn-primary"
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.65rem', fontSize: '0.8rem' }}
                 >
-                  <Download size={16} /> Sauvegarder (.thbackup)
+                  <Download size={16} /> {t.backupBtn}
                 </button>
 
                 <button
@@ -559,7 +651,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="btn btn-secondary"
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.65rem', fontSize: '0.8rem' }}
                 >
-                  <Upload size={16} /> Restaurer sauvegarde
+                  <Upload size={16} /> {t.restoreBtn}
                 </button>
                 <input 
                   type="file" 
@@ -595,7 +687,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     }}
                   >
                     <Trash2 size={15} color="#f59e0b" />
-                    {cacheClearedSuccess ? 'Cache vidé !' : 'Vider le cache'}
+                    {cacheClearedSuccess ? t.cacheCleared : t.clearCache}
                   </button>
 
                   <button
@@ -616,7 +708,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     }}
                   >
                     <Bug size={15} color="#38bdf8" />
-                    {bugReportGenerated ? 'Rapport généré !' : 'Rapporter un bug'}
+                    {bugReportGenerated ? t.bugReported : t.reportBug}
                   </button>
                 </div>
 
@@ -637,7 +729,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="btn btn-ghost"
                   style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '0.5rem', alignSelf: 'flex-start' }}
                 >
-                  <RefreshCw size={13} /> Réinitialiser aux données par défaut d'exemple
+                  <RefreshCw size={13} /> {t.resetDefaults}
                 </button>
               </div>
             </div>
@@ -650,7 +742,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 KBV
               </div>
               <div>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: '0 0 4px 0' }}>KBV Territory</h3>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: '0 0 4px 0', color: 'var(--text-primary)' }}>KBV Territory</h3>
                 <div style={{ fontSize: '0.8rem', color: '#38bdf8', fontWeight: 600 }}>
                   Version {localSettings.appVersion || '4.2.1-fr'} (Build 2026.10)
                 </div>
@@ -702,7 +794,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               className="btn btn-secondary" 
               style={{ padding: '0.45rem 0.9rem', fontSize: '0.82rem' }}
             >
-              Fermer
+              {t.close}
             </button>
             <button 
               type="button" 
@@ -711,7 +803,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               style={{ padding: '0.45rem 1.1rem', fontSize: '0.82rem' }}
             >
               {savedSuccess ? <Check size={16} color="#10b981" /> : null}
-              {savedSuccess ? 'Enregistré !' : 'Enregistrer'}
+              {savedSuccess ? t.saved : t.save}
             </button>
           </div>
         </div>

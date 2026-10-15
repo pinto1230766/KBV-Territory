@@ -37,8 +37,11 @@ import { RequestTerritoryModal } from './components/RequestTerritoryModal';
 import { AccountTerritoriesView } from './components/AccountTerritoriesView';
 import { TerritoryDesignerModal } from './components/TerritoryDesignerModal';
 import { FileSpreadsheet } from 'lucide-react';
+import { useTranslation } from './i18n/LanguageContext';
+import type { LanguageCode } from './i18n/translations';
 
 export const App: React.FC = () => {
+  const { t, setLanguage } = useTranslation();
   const [territories, setTerritories] = useState<Territory[]>([]);
   const [locations, setLocations] = useState<LocationItem[]>([]);
   const [visits, setVisits] = useState<VisitRecord[]>([]);
@@ -92,6 +95,9 @@ export const App: React.FC = () => {
       setVisits(vList);
       setCampaigns(cList);
       setSettings(sList);
+      if (sList.language) {
+        setLanguage(sList.language as LanguageCode);
+      }
       setPublishers(pList);
       setServiceGroups(gList);
     } catch (e) {
@@ -104,6 +110,15 @@ export const App: React.FC = () => {
   useEffect(() => {
     loadAllData();
   }, []);
+
+  // Application automatique du thème (sombre / clair / système)
+  useEffect(() => {
+    const th = settings.theme || 'dark';
+    const resolved = th === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : th;
+    document.documentElement.setAttribute('data-theme', resolved);
+  }, [settings.theme]);
 
   // Détection des URL directes / QR Code (ex: #territory=terr-01 ou #account)
   useEffect(() => {
@@ -493,7 +508,7 @@ export const App: React.FC = () => {
                 KBV Territory
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Congrégation {settings.congregationName} {activeCampaign ? `• 🎯 ${activeCampaign.name}` : ''}
+                {settings.congregationName ? `${settings.congregationName}` : 'KBV'} {activeCampaign ? `• 🎯 ${activeCampaign.name}` : ''}
               </div>
             </div>
           </div>
@@ -509,7 +524,7 @@ export const App: React.FC = () => {
               style={{ padding: '0.45rem 0.85rem', fontSize: '0.85rem' }}
             >
               <BookOpen size={16} />
-              Territoires ({territories.length})
+              {t.territories} ({territories.length})
             </button>
 
             <button
@@ -521,7 +536,7 @@ export const App: React.FC = () => {
               style={{ padding: '0.45rem 0.85rem', fontSize: '0.85rem' }}
             >
               <Compass size={16} />
-              Carte Globale
+              {t.globalMap}
             </button>
 
             <button
@@ -533,7 +548,7 @@ export const App: React.FC = () => {
               style={{ padding: '0.45rem 0.85rem', fontSize: '0.85rem' }}
             >
               <Clock size={16} />
-              Historique ({visits.length})
+              {t.visitHistory} ({visits.length})
             </button>
 
             <button
@@ -552,7 +567,7 @@ export const App: React.FC = () => {
               title="Portail Officiel d'Administration des Territoires (Account/Territories)"
             >
               <FileSpreadsheet size={16} />
-              Responsable (Account)
+              {t.accountManagement}
             </button>
           </nav>
 
@@ -564,16 +579,16 @@ export const App: React.FC = () => {
               style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }}
               title="Scanner un QR code avec l appareil photo"
             >
-              <Camera size={16} /> Scanner
+              <Camera size={16} /> {t.scanQr}
             </button>
 
             <button
               onClick={() => setIsCampaignsOpen(true)}
               className={`btn ${activeCampaign ? 'btn-primary' : 'btn-secondary'}`}
               style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }}
-              title="Campagnes d invitations"
+              title="Campagnes"
             >
-              <Target size={16} /> Campagnes
+              <Target size={16} /> {t.campaigns}
             </button>
 
             <button
@@ -589,16 +604,16 @@ export const App: React.FC = () => {
                 alignItems: 'center',
                 gap: 5
               }}
-              title="Demande de territoire auprès du préposé (?)"
+              title="Demande de territoire auprès du responsable"
             >
-              <HelpCircle size={16} /> Demande (?)
+              <HelpCircle size={16} /> {t.requestTerritory}
             </button>
 
             <button
               onClick={() => setIsSettingsOpen(true)}
               className="btn btn-secondary"
               style={{ padding: '0.5rem' }}
-              title="Paramètres & Sauvegardes"
+              title={t.settings}
             >
               <Settings size={18} />
             </button>
@@ -617,7 +632,6 @@ export const App: React.FC = () => {
             onUpdateUnitStatus={handleUpdateUnitStatus}
             onUpdateNotes={handleUpdateNotes}
             onShare={(t) => setShareTerritory(t)}
-            onEditBoundary={(t) => setEditingBoundaryTerritory(t)}
             onOpenAnnotate={(t) => setAnnotatingTerritory(t)}
             onReturnTerritory={(t) => setReturningTerritory(t)}
             onAssignTerritory={(t) => setAssigningTerritory(t)}
@@ -783,6 +797,9 @@ export const App: React.FC = () => {
           settings={settings}
           onUpdateSettings={async (newSettings) => {
             setSettings(newSettings);
+            if (newSettings.language) {
+              setLanguage(newSettings.language as LanguageCode);
+            }
             await StorageService.saveSettings(newSettings);
           }}
           onDataImported={loadAllData}

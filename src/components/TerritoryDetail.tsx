@@ -10,7 +10,6 @@ import {
   QrCode, 
   Calendar, 
   UserCheck, 
-  Edit, 
   Key, 
   PenTool, 
   RotateCcw, 
@@ -26,6 +25,7 @@ import { sortLocationsByOrder } from '../utils/sorting';
 import type { StreetSortOrder } from '../utils/sorting';
 import { TerritoryMap } from './TerritoryMap';
 import { NavigationModal } from './NavigationModal';
+import { useTranslation } from '../i18n/LanguageContext';
 
 interface TerritoryDetailProps {
   territory: Territory;
@@ -35,7 +35,6 @@ interface TerritoryDetailProps {
   onUpdateUnitStatus: (locationId: string, unitId: string, status: VisitStatus) => void;
   onUpdateNotes: (locationId: string, notes: string, personalNotes?: string) => void;
   onShare: (territory: Territory) => void;
-  onEditBoundary?: (territory: Territory) => void;
   onOpenAnnotate?: (territory: Territory) => void;
   onReturnTerritory?: (territory: Territory) => void;
   onAssignTerritory?: (territory: Territory) => void;
@@ -55,7 +54,6 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
   onUpdateUnitStatus,
   onUpdateNotes,
   onShare,
-  onEditBoundary,
   onOpenAnnotate,
   onReturnTerritory,
   onAssignTerritory,
@@ -66,6 +64,7 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
   onSaveFreehandDrawing,
   onClearFreehandDrawings
 }) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'streets' | 'map'>('streets');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'not_at_home' | 'not_visited' | 'visited'>('all');
   const [expandedBuildingId, setExpandedBuildingId] = useState<string | null>(null);
@@ -162,21 +161,14 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
         <button onClick={onBack} className="btn btn-secondary">
           <ArrowLeft size={18} />
-          Retour aux territoires
+          {t.backToTerritories}
         </button>
 
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           {onOpenAnnotate && (
             <button onClick={() => onOpenAnnotate(territory)} className="btn btn-secondary" title="Annoter ou dessiner au doigt sur la carte">
               <PenTool size={16} />
-              {territory.annotationDataUrl ? 'Voir Annotation ✏️' : 'Annoter'}
-            </button>
-          )}
-
-          {onEditBoundary && (
-            <button onClick={() => onEditBoundary(territory)} className="btn btn-secondary" title="Modifier le tracé GPS des frontières">
-              <Edit size={16} />
-              Tracé GPS
+              {territory.annotationDataUrl ? t.viewAnnotation : t.annotate}
             </button>
           )}
 
@@ -186,7 +178,7 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
             title="Lancer l'itinéraire GPS vers le territoire (Google Maps, Waze...)"
           >
             <Navigation size={16} color="#38bdf8" />
-            Itinéraire
+            {t.directions}
           </button>
 
           {onPrint && (
@@ -196,18 +188,18 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
               title="Imprimer la fiche officielle du territoire"
             >
               <Printer size={16} />
-              Imprimer
+              {t.print}
             </button>
           )}
 
           <button onClick={() => onShare(territory)} className="btn btn-secondary">
             <Share2 size={16} />
-            Partager (.thshare)
+            {t.share}
           </button>
 
           <button onClick={() => onShare(territory)} className="btn btn-primary">
             <QrCode size={16} />
-            QR Code
+            {t.qrCode}
           </button>
 
           {onAssignTerritory && territory.status === 'available' && (

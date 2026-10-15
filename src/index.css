@@ -52,6 +52,28 @@
   --shadow-glow: 0 0 25px -5px var(--accent-blue-glow);
 }
 
+[data-theme="light"] {
+  /* Palette Light Mode Premium */
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f5f9;
+  --bg-card: rgba(255, 255, 255, 0.85);
+  --bg-card-hover: #ffffff;
+
+  --border-subtle: rgba(0, 0, 0, 0.1);
+  --border-active: rgba(2, 132, 199, 0.4);
+
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+
+  --accent-blue: #0284c7;
+  --accent-blue-glow: rgba(2, 132, 199, 0.2);
+  --accent-purple: #6366f1;
+
+  --shadow-card: 0 10px 25px -5px rgba(0, 0, 0, 0.08);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

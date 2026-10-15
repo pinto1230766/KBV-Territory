@@ -12,6 +12,7 @@ import {
   HelpCircle
 } from 'lucide-react';
 import type { Territory, LocationItem, TerritoryType } from '../types';
+import { useTranslation } from '../i18n/LanguageContext';
 
 interface TerritoryListProps {
   territories: Territory[];
@@ -40,6 +41,7 @@ export const TerritoryList: React.FC<TerritoryListProps> = ({
   onPrintTerritory,
   onRequestTerritory
 }) => {
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'assigned' | 'available' | 'in_progress'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -130,7 +132,7 @@ export const TerritoryList: React.FC<TerritoryListProps> = ({
           <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input
             type="text"
-            placeholder="Rechercher par n° de territoire, quartier ou proclamateur..."
+            placeholder={t.searchPlaceholder}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{
@@ -149,7 +151,7 @@ export const TerritoryList: React.FC<TerritoryListProps> = ({
           {onOpenScanner && (
             <button onClick={onOpenScanner} className="btn btn-secondary" title="Scanner une carte de territoire papier">
               <Camera size={16} />
-              Scanner QR
+              {t.scanQr}
             </button>
           )}
 
@@ -162,21 +164,21 @@ export const TerritoryList: React.FC<TerritoryListProps> = ({
                 border: '1px solid rgba(14, 165, 233, 0.35)',
                 color: '#38bdf8'
               }}
-              title="Demander un territoire au préposé"
+              title="Demander un territoire au responsable"
             >
               <HelpCircle size={16} />
-              Demander (?)
+              {t.requestTerritory}
             </button>
           )}
 
           <button onClick={onOpenMap} className="btn btn-secondary">
             <Layers size={16} />
-            Carte Globale
+            {t.globalMap}
           </button>
 
           <button onClick={() => setIsModalOpen(true)} className="btn btn-primary">
             <Plus size={16} />
-            Nouveau Territoire
+            + {t.territories}
           </button>
         </div>
       </div>
@@ -188,28 +190,28 @@ export const TerritoryList: React.FC<TerritoryListProps> = ({
           className={`btn ${selectedFilter === 'all' ? 'btn-primary' : 'btn-ghost'}`}
           style={{ fontSize: '0.8rem', padding: '0.45rem 0.9rem' }}
         >
-          Tous ({territories.length})
+          {t.filterAll} ({territories.length})
         </button>
         <button
           onClick={() => setSelectedFilter('in_progress')}
           className={`btn ${selectedFilter === 'in_progress' ? 'btn-primary' : 'btn-ghost'}`}
           style={{ fontSize: '0.8rem', padding: '0.45rem 0.9rem' }}
         >
-          En cours
+          {t.statusInProgress}
         </button>
         <button
           onClick={() => setSelectedFilter('assigned')}
           className={`btn ${selectedFilter === 'assigned' ? 'btn-primary' : 'btn-ghost'}`}
           style={{ fontSize: '0.8rem', padding: '0.45rem 0.9rem' }}
         >
-          Attribués
+          {t.filterAssigned}
         </button>
         <button
           onClick={() => setSelectedFilter('available')}
           className={`btn ${selectedFilter === 'available' ? 'btn-primary' : 'btn-ghost'}`}
           style={{ fontSize: '0.8rem', padding: '0.45rem 0.9rem' }}
         >
-          Disponibles
+          {t.filterAvailable}
         </button>
       </div>
 
