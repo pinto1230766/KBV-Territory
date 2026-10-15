@@ -377,6 +377,7 @@ const INITIAL_SETTINGS: CongregationSettings = {
   gdprCompliant: true,
   publisherEmail: 'jean.dupont@congre.org',
   showMapPreview: true,
+  adminPin: '1914',
   appVersion: '4.2.1-fr'
 };
 

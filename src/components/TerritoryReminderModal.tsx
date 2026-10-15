@@ -43,7 +43,7 @@ export const TerritoryReminderModal: React.FC<TerritoryReminderModalProps> = ({
   };
 
   const monthsHeld = getMonthsHeld();
-  const directLink = `${window.location.origin}${window.location.pathname}#territory=${territory.id}`;
+  const directLink = `${window.location.origin}${window.location.pathname}#/p/${territory.shortUrlCode || territory.id}`;
 
   // Génération du texte automatique
   const generateMessage = (): string => {

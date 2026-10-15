@@ -34,6 +34,8 @@ import { StorageService } from '../services/storage';
 interface TerritoryDetailProps {
   territory: Territory;
   locations: LocationItem[];
+  isPublisherOnly?: boolean;
+  onRequestAdminLogin?: () => void;
   onBack: () => void;
   onUpdateLocationStatus: (locationId: string, status: VisitStatus) => void;
   onUpdateUnitStatus: (locationId: string, unitId: string, status: VisitStatus) => void;
@@ -53,6 +55,8 @@ interface TerritoryDetailProps {
 export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
   territory,
   locations,
+  isPublisherOnly = false,
+  onRequestAdminLogin,
   onBack,
   onUpdateLocationStatus,
   onUpdateUnitStatus,
@@ -206,7 +210,7 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
             {t.directions}
           </button>
 
-          {onPrint && (
+          {!isPublisherOnly && onPrint && (
             <button 
               onClick={() => onPrint(territory)} 
               className="btn btn-secondary"
@@ -217,17 +221,21 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
             </button>
           )}
 
-          <button onClick={() => onShare(territory)} className="btn btn-secondary">
-            <Share2 size={16} />
-            {t.share}
-          </button>
+          {!isPublisherOnly && (
+            <>
+              <button onClick={() => onShare(territory)} className="btn btn-secondary">
+                <Share2 size={16} />
+                {t.share}
+              </button>
 
-          <button onClick={() => onShare(territory)} className="btn btn-primary">
-            <QrCode size={16} />
-            {t.qrCode}
-          </button>
+              <button onClick={() => onShare(territory)} className="btn btn-primary">
+                <QrCode size={16} />
+                {t.qrCode}
+              </button>
+            </>
+          )}
 
-          {onAssignTerritory && territory.status === 'available' && (
+          {!isPublisherOnly && onAssignTerritory && territory.status === 'available' && (
             <button 
               onClick={() => onAssignTerritory(territory)} 
               className="btn btn-primary"
@@ -247,7 +255,19 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
               title="Rendre le territoire à la congrégation"
             >
               <RotateCcw size={16} />
-              Rendre
+              Restituer le territoire
+            </button>
+          )}
+
+          {isPublisherOnly && onRequestAdminLogin && (
+            <button
+              onClick={onRequestAdminLogin}
+              className="btn btn-ghost"
+              title="Accès responsable (Code PIN)"
+              style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+            >
+              <Lock size={13} />
+              <span>Admin</span>
             </button>
           )}
         </div>
@@ -437,14 +457,16 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
             <MapPin size={16} />
             Vue Carte GPS
           </button>
-          <button 
-            onClick={() => setActiveTab('history')}
-            className={`btn ${activeTab === 'history' ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-          >
-            <Clock size={16} />
-            Historique ({territory.assignmentHistory?.length || (territory.assignee ? 1 : 0)})
-          </button>
+          {!isPublisherOnly && (
+            <button 
+              onClick={() => setActiveTab('history')}
+              className={`btn ${activeTab === 'history' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+            >
+              <Clock size={16} />
+              Historique ({territory.assignmentHistory?.length || (territory.assignee ? 1 : 0)})
+            </button>
+          )}
         </div>
 
         {activeTab === 'streets' && (

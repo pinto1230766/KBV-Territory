@@ -483,6 +483,58 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#38bdf8' }}
                 />
               </div>
+
+              {/* Code PIN de sécurité Responsable / Administrateur */}
+              <div style={{
+                background: 'rgba(2, 132, 199, 0.08)',
+                border: '1px solid rgba(2, 132, 199, 0.3)',
+                borderRadius: '10px',
+                padding: '1rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.6rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <ShieldCheck size={20} color="#38bdf8" />
+                  <div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      Code PIN Administrateur (Console Responsable)
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                      Protège les fonctions de gestion, découpage et registres S-12 / S-13.
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.25rem' }}>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    placeholder="1914"
+                    value={localSettings.adminPin || '1914'}
+                    onChange={(e) => {
+                      const updated = { ...localSettings, adminPin: e.target.value.replace(/[^0-9]/g, '') };
+                      setLocalSettings(updated);
+                      onUpdateSettings(updated);
+                    }}
+                    style={{
+                      width: '120px',
+                      padding: '0.55rem 0.75rem',
+                      borderRadius: '8px',
+                      background: 'var(--bg-tertiary)',
+                      border: '1px solid var(--border-subtle)',
+                      color: '#38bdf8',
+                      fontSize: '1.1rem',
+                      fontWeight: 800,
+                      letterSpacing: '0.2em',
+                      textAlign: 'center'
+                    }}
+                  />
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    (4 à 6 chiffres, par défaut : <strong>1914</strong>)
+                  </span>
+                </div>
+              </div>
             </div>
           )}
 

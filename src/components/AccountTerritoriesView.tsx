@@ -344,7 +344,7 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
   // Fonction d'envoi de la confirmation d'attribution par WhatsApp
   const sendAssignmentConfirmationWhatsApp = (terr: Territory, publisherName: string, publisherPhone?: string, dueDate?: string) => {
     const origin = window.location.origin + window.location.pathname;
-    const directLink = `${origin}#territory=${terr.id}`;
+    const directLink = `${origin}#/p/${terr.shortUrlCode || terr.id}`;
     const lines = [
       `*ATTRIBUTION DE TERRITOIRE - KBV Territory*`,
       `Bonjour ${publisherName} ! 🙏`,

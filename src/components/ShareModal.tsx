@@ -19,7 +19,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   const [isEncrypting, setIsEncrypting] = useState(false);
 
   const territoryLocations = locations.filter(l => l.territoryId === territory.id);
-  const shareUrl = `${window.location.origin}/#territory=${territory.id}`;
+  const shareUrl = `${window.location.origin}${window.location.pathname}#/p/${territory.shortUrlCode || territory.id}`;
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(shareUrl);

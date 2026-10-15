@@ -204,5 +204,6 @@ export interface CongregationSettings {
   showMapPreview: boolean; // Aperçu / poursuite de la carte sur les fiches
   territoryServantName?: string; // Nom du frère préposé aux territoires
   territoryServantPhone?: string; // Téléphone WhatsApp du préposé pour les demandes
+  adminPin?: string; // Code PIN de verrouillage de la console administrateur (ex: 1914)
   appVersion?: string;
 }

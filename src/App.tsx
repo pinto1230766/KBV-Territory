@@ -6,7 +6,9 @@ import {
   Clock, 
   Target, 
   Camera,
-  HelpCircle
+  HelpCircle,
+  FileSpreadsheet,
+  Lock
 } from 'lucide-react';
 import type { 
   Territory, 
@@ -36,7 +38,8 @@ import { PrintTerritoryModal } from './components/PrintTerritoryModal';
 import { RequestTerritoryModal } from './components/RequestTerritoryModal';
 import { AccountTerritoriesView } from './components/AccountTerritoriesView';
 import { TerritoryDesignerModal } from './components/TerritoryDesignerModal';
-import { FileSpreadsheet } from 'lucide-react';
+import { AdminPinModal } from './components/AdminPinModal';
+import { PublisherPortalView } from './components/PublisherPortalView';
 import { useTranslation } from './i18n/LanguageContext';
 import type { LanguageCode } from './i18n/translations';
 
@@ -76,6 +79,13 @@ export const App: React.FC = () => {
   const [isRequestTerritoryOpen, setIsRequestTerritoryOpen] = useState(false);
   const [isDesignerOpen, setIsDesignerOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Séparation étanche Proclamateur vs Administrateur (Système officiel Territory Helper)
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
+    return sessionStorage.getItem('kbv_admin_auth') === 'true';
+  });
+  const [isAdminPinModalOpen, setIsAdminPinModalOpen] = useState(false);
+  const [pendingAdminAction, setPendingAdminAction] = useState<(() => void) | null>(null);
 
   // Chargement global des données
   const loadAllData = async () => {
@@ -120,21 +130,47 @@ export const App: React.FC = () => {
     document.documentElement.setAttribute('data-theme', resolved);
   }, [settings.theme]);
 
-  // Détection des URL directes / QR Code (ex: #territory=terr-01 ou #account)
+  // Détection des URL directes / QR Code (ex: #/p/LYON01, #territory=terr-01 ou #account)
   useEffect(() => {
-    const hash = window.location.hash.toLowerCase();
-    const pathname = window.location.pathname.toLowerCase();
-    if (hash.includes('account') || pathname.includes('account') || hash.includes('territories')) {
-      setCurrentView('account');
-      setSelectedTerritory(null);
-    } else if (hash.includes('territory=')) {
-      const terrId = hash.split('territory=')[1];
-      const target = territories.find(t => t.id === terrId);
-      if (target) {
-        setSelectedTerritory(target);
+    const handleHash = () => {
+      const hash = window.location.hash.toLowerCase();
+      const pathname = window.location.pathname.toLowerCase();
+
+      if (hash.includes('account') || pathname.includes('account') || hash.includes('territories') || hash.includes('admin')) {
+        if (isAdminAuthenticated) {
+          setCurrentView('account');
+          setSelectedTerritory(null);
+        } else {
+          setIsAdminPinModalOpen(true);
+          setPendingAdminAction(() => () => {
+            setCurrentView('account');
+            setSelectedTerritory(null);
+          });
+        }
+      } else if (hash.includes('p=') || hash.includes('/p/')) {
+        const rawCode = hash.includes('p=') ? hash.split('p=')[1] : hash.split('/p/')[1];
+        const cleanCode = rawCode ? rawCode.split('&')[0].toUpperCase() : '';
+        const target = territories.find(t => 
+          t.shortUrlCode?.toUpperCase() === cleanCode || 
+          t.number.toUpperCase() === cleanCode || 
+          t.id.toUpperCase() === cleanCode
+        );
+        if (target) {
+          setSelectedTerritory(target);
+        }
+      } else if (hash.includes('territory=')) {
+        const terrId = hash.split('territory=')[1].split('&')[0];
+        const target = territories.find(t => t.id === terrId);
+        if (target) {
+          setSelectedTerritory(target);
+        }
       }
-    }
-  }, [territories]);
+    };
+
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, [territories, isAdminAuthenticated]);
 
   // Enregistrement / mise à jour d'un statut de maison
   const handleUpdateLocationStatus = async (locationId: string, status: VisitStatus) => {
@@ -467,242 +503,423 @@ export const App: React.FC = () => {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Barre de navigation principale */}
-      <header style={{
-        background: 'rgba(16, 21, 34, 0.9)',
-        backdropFilter: 'blur(16px)',
-        borderBottom: '1px solid var(--border-subtle)',
-        position: 'sticky',
-        top: 0,
-        zIndex: 1000,
-        padding: '0.75rem 1.5rem'
-      }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-          {/* Logo & Titre KBV Territory */}
-          <div 
-            onClick={() => {
-              setSelectedTerritory(null);
-              setCurrentView('list');
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}
-          >
-            <div style={{
-              width: 38,
-              height: 38,
-              borderRadius: '10px',
-              background: 'linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 4px 15px rgba(14, 165, 233, 0.4)',
-              color: 'white',
-              fontWeight: 900,
-              fontSize: '0.85rem',
-              letterSpacing: '-0.03em'
-            }}>
-              KBV
+      {/* Header : Dépend de l'authentification (Proclamateur vs Administrateur) */}
+      {!isAdminAuthenticated ? (
+        <header className="glass-panel" style={{
+          background: 'rgba(16, 21, 34, 0.95)',
+          backdropFilter: 'blur(16px)',
+          borderBottom: '1px solid var(--border-subtle)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 1000,
+          padding: '0.65rem 1.25rem'
+        }}>
+          <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem' }}>
+            <div 
+              onClick={() => setSelectedTerritory(null)}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}
+            >
+              <div style={{
+                width: 36,
+                height: 36,
+                borderRadius: '10px',
+                background: 'linear-gradient(135deg, #0284c7 0%, #10b981 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 15px rgba(2, 132, 199, 0.4)',
+                color: 'white',
+                fontWeight: 900,
+                fontSize: '0.85rem'
+              }}>
+                KBV
+              </div>
+
+              <div>
+                <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  KBV Territory
+                  <span style={{
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    padding: '0.15rem 0.5rem',
+                    borderRadius: '999px',
+                    background: 'rgba(16, 185, 129, 0.2)',
+                    color: '#34d399',
+                    border: '1px solid rgba(16, 185, 129, 0.4)'
+                  }}>
+                    Proclamateur
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  {settings.congregationName || 'Lyon Centre'} {activeCampaign ? `• 🎯 ${activeCampaign.name}` : ''}
+                </div>
+              </div>
             </div>
 
-            <div>
-              <div style={{ fontWeight: 800, fontSize: '1.2rem', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '6px', color: '#f8fafc' }}>
-                KBV Territory
-              </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                {settings.congregationName ? `${settings.congregationName}` : 'KBV'} {activeCampaign ? `• 🎯 ${activeCampaign.name}` : ''}
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {selectedTerritory && (
+                <button
+                  onClick={() => setSelectedTerritory(null)}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.8rem', padding: '0.45rem 0.75rem' }}
+                >
+                  ← Mes territoires
+                </button>
+              )}
+
+              <button
+                onClick={() => setIsRequestTerritoryOpen(true)}
+                className="btn btn-secondary"
+                style={{
+                  padding: '0.45rem 0.75rem',
+                  fontSize: '0.8rem',
+                  background: 'rgba(14, 165, 233, 0.12)',
+                  borderColor: 'rgba(14, 165, 233, 0.35)',
+                  color: '#38bdf8',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}
+                title="Demande de territoire auprès du responsable"
+              >
+                <HelpCircle size={15} /> 
+                <span className="hide-on-mobile">Demander</span>
+              </button>
+
+              <button
+                onClick={() => setIsAdminPinModalOpen(true)}
+                className="btn btn-ghost"
+                style={{
+                  padding: '0.45rem 0.65rem',
+                  fontSize: '0.78rem',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  background: 'rgba(245, 158, 11, 0.08)'
+                }}
+                title="Accès Responsable des territoires (Code PIN)"
+              >
+                <Lock size={14} color="#f59e0b" />
+                <span style={{ color: '#fbbf24', fontWeight: 600 }}>Responsable</span>
+              </button>
             </div>
           </div>
-
-          {/* Navigation centrale (Desktop & Tablette paysage) */}
-          <nav className="desktop-nav" style={{ display: 'flex', gap: '0.35rem', background: 'var(--bg-tertiary)', padding: '4px', borderRadius: '10px' }}>
-            <button
+        </header>
+      ) : (
+        <header className="glass-panel" style={{
+          background: 'rgba(16, 21, 34, 0.95)',
+          backdropFilter: 'blur(16px)',
+          borderBottom: '1px solid var(--border-subtle)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 1000,
+          padding: '0.75rem 1.5rem'
+        }}>
+          <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+            {/* Logo & Titre KBV Territory */}
+            <div 
               onClick={() => {
                 setSelectedTerritory(null);
                 setCurrentView('list');
               }}
-              className={`btn ${currentView === 'list' && !selectedTerritory ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ padding: '0.45rem 0.85rem', fontSize: '0.85rem' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}
             >
-              <BookOpen size={16} />
-              {t.territories} ({territories.length})
-            </button>
-
-            <button
-              onClick={() => {
-                setSelectedTerritory(null);
-                setCurrentView('map');
-              }}
-              className={`btn ${currentView === 'map' ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ padding: '0.45rem 0.85rem', fontSize: '0.85rem' }}
-            >
-              <Compass size={16} />
-              {t.globalMap}
-            </button>
-
-            <button
-              onClick={() => {
-                setSelectedTerritory(null);
-                setCurrentView('history');
-              }}
-              className={`btn ${currentView === 'history' ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ padding: '0.45rem 0.85rem', fontSize: '0.85rem' }}
-            >
-              <Clock size={16} />
-              {t.visitHistory} ({visits.length})
-            </button>
-
-            <button
-              onClick={() => {
-                setSelectedTerritory(null);
-                setCurrentView('account');
-              }}
-              className={`btn ${currentView === 'account' ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ 
-                padding: '0.45rem 0.85rem', 
-                fontSize: '0.85rem',
-                border: currentView === 'account' ? undefined : '1px solid rgba(2, 132, 199, 0.4)',
-                background: currentView === 'account' ? '#0284c7' : 'rgba(2, 132, 199, 0.1)',
-                color: currentView === 'account' ? '#fff' : '#38bdf8'
-              }}
-              title="Portail Officiel d'Administration des Territoires (Account/Territories)"
-            >
-              <FileSpreadsheet size={16} />
-              {t.accountManagement}
-            </button>
-          </nav>
-
-          {/* Actions à droite */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <button
-              onClick={() => setIsScannerOpen(true)}
-              className="btn btn-secondary"
-              style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }}
-              title="Scanner un QR code avec l appareil photo"
-            >
-              <Camera size={16} /> {t.scanQr}
-            </button>
-
-            <button
-              onClick={() => setIsCampaignsOpen(true)}
-              className={`btn ${activeCampaign ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }}
-              title="Campagnes"
-            >
-              <Target size={16} /> {t.campaigns}
-            </button>
-
-            <button
-              onClick={() => setIsRequestTerritoryOpen(true)}
-              className="btn btn-secondary"
-              style={{
-                padding: '0.45rem 0.75rem',
-                fontSize: '0.8rem',
-                background: 'rgba(14, 165, 233, 0.12)',
-                border: '1px solid rgba(14, 165, 233, 0.35)',
-                color: '#38bdf8',
+              <div style={{
+                width: 38,
+                height: 38,
+                borderRadius: '10px',
+                background: 'linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 5
-              }}
-              title="Demande de territoire auprès du responsable"
-            >
-              <HelpCircle size={16} /> {t.requestTerritory}
-            </button>
+                justifyContent: 'center',
+                boxShadow: '0 4px 15px rgba(14, 165, 233, 0.4)',
+                color: 'white',
+                fontWeight: 900,
+                fontSize: '0.85rem',
+                letterSpacing: '-0.03em'
+              }}>
+                KBV
+              </div>
 
-            <button
-              onClick={() => setIsSettingsOpen(true)}
-              className="btn btn-secondary"
-              style={{ padding: '0.5rem' }}
-              title={t.settings}
-            >
-              <Settings size={18} />
-            </button>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: '1.2rem', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '6px', color: '#f8fafc' }}>
+                  KBV Territory
+                  <span style={{
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    padding: '0.15rem 0.5rem',
+                    borderRadius: '999px',
+                    background: 'rgba(56, 189, 248, 0.2)',
+                    color: '#38bdf8',
+                    border: '1px solid rgba(56, 189, 248, 0.4)'
+                  }}>
+                    Responsable
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {settings.congregationName ? `${settings.congregationName}` : 'KBV'} {activeCampaign ? `• 🎯 ${activeCampaign.name}` : ''}
+                </div>
+              </div>
+            </div>
+
+            {/* Navigation centrale (Desktop & Tablette paysage) */}
+            <nav className="desktop-nav" style={{ display: 'flex', gap: '0.35rem', background: 'var(--bg-tertiary)', padding: '4px', borderRadius: '10px' }}>
+              <button
+                onClick={() => {
+                  setSelectedTerritory(null);
+                  setCurrentView('list');
+                }}
+                className={`btn ${currentView === 'list' && !selectedTerritory ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ padding: '0.45rem 0.85rem', fontSize: '0.85rem' }}
+              >
+                <BookOpen size={16} />
+                {t.territories} ({territories.length})
+              </button>
+
+              <button
+                onClick={() => {
+                  setSelectedTerritory(null);
+                  setCurrentView('map');
+                }}
+                className={`btn ${currentView === 'map' ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ padding: '0.45rem 0.85rem', fontSize: '0.85rem' }}
+              >
+                <Compass size={16} />
+                {t.globalMap}
+              </button>
+
+              <button
+                onClick={() => {
+                  setSelectedTerritory(null);
+                  setCurrentView('history');
+                }}
+                className={`btn ${currentView === 'history' ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ padding: '0.45rem 0.85rem', fontSize: '0.85rem' }}
+              >
+                <Clock size={16} />
+                {t.visitHistory} ({visits.length})
+              </button>
+
+              <button
+                onClick={() => {
+                  setSelectedTerritory(null);
+                  setCurrentView('account');
+                }}
+                className={`btn ${currentView === 'account' ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ 
+                  padding: '0.45rem 0.85rem', 
+                  fontSize: '0.85rem',
+                  border: currentView === 'account' ? undefined : '1px solid rgba(2, 132, 199, 0.4)',
+                  background: currentView === 'account' ? '#0284c7' : 'rgba(2, 132, 199, 0.1)',
+                  color: currentView === 'account' ? '#fff' : '#38bdf8'
+                }}
+                title="Portail Officiel d'Administration des Territoires (Account/Territories)"
+              >
+                <FileSpreadsheet size={16} />
+                {t.accountManagement}
+              </button>
+            </nav>
+
+            {/* Actions à droite */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <button
+                onClick={() => setIsScannerOpen(true)}
+                className="btn btn-secondary"
+                style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }}
+                title="Scanner un QR code avec l appareil photo"
+              >
+                <Camera size={16} /> {t.scanQr}
+              </button>
+
+              <button
+                onClick={() => setIsCampaignsOpen(true)}
+                className={`btn ${activeCampaign ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }}
+                title="Campagnes"
+              >
+                <Target size={16} /> {t.campaigns}
+              </button>
+
+              <button
+                onClick={() => setIsRequestTerritoryOpen(true)}
+                className="btn btn-secondary"
+                style={{
+                  padding: '0.45rem 0.75rem',
+                  fontSize: '0.8rem',
+                  background: 'rgba(14, 165, 233, 0.12)',
+                  border: '1px solid rgba(14, 165, 233, 0.35)',
+                  color: '#38bdf8',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5
+                }}
+                title="Demande de territoire auprès du responsable"
+              >
+                <HelpCircle size={16} /> {t.requestTerritory}
+              </button>
+
+              <button
+                onClick={() => setIsSettingsOpen(true)}
+                className="btn btn-secondary"
+                style={{ padding: '0.5rem' }}
+                title={t.settings}
+              >
+                <Settings size={18} />
+              </button>
+
+              {/* Bouton de verrouillage rapide */}
+              <button
+                onClick={() => {
+                  setIsAdminAuthenticated(false);
+                  sessionStorage.removeItem('kbv_admin_auth');
+                  setSelectedTerritory(null);
+                }}
+                className="btn btn-secondary"
+                style={{
+                  padding: '0.45rem 0.75rem',
+                  fontSize: '0.78rem',
+                  borderColor: 'rgba(239, 68, 68, 0.35)',
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  color: '#f87171',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}
+                title="Verrouiller la console responsable et repasser en Espace Proclamateur"
+              >
+                <Lock size={14} />
+                <span>Verrouiller</span>
+              </button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       {/* Vue principale dynamique */}
       <main style={{ flex: 1 }}>
-        {selectedTerritory ? (
-          <TerritoryDetail
-            territory={selectedTerritory}
-            locations={locations}
-            onBack={() => setSelectedTerritory(null)}
-            onUpdateLocationStatus={handleUpdateLocationStatus}
-            onUpdateUnitStatus={handleUpdateUnitStatus}
-            onUpdateNotes={handleUpdateNotes}
-            onShare={(t) => setShareTerritory(t)}
-            onOpenAnnotate={(t) => setAnnotatingTerritory(t)}
-            onReturnTerritory={(t) => setReturningTerritory(t)}
-            onAssignTerritory={(t) => setAssigningTerritory(t)}
-            onPrint={(t) => setPrintingTerritory(t)}
-            onSaveFieldNote={handleSaveFieldNote}
-            onDeleteFieldNote={handleDeleteFieldNote}
-            onAddNewLocationAtPoint={handleAddNewLocationAtPoint}
-            onSaveFreehandDrawing={handleSaveFreehandDrawing}
-            onClearFreehandDrawings={handleClearFreehandDrawings}
-          />
-        ) : currentView === 'map' ? (
-          <div style={{ height: 'calc(100vh - 65px)', width: '100%' }}>
-            <TerritoryMap
-              territories={territories}
-              selectedTerritory={null}
+        {!isAdminAuthenticated ? (
+          selectedTerritory ? (
+            <TerritoryDetail
+              territory={selectedTerritory}
               locations={locations}
-              onSelectTerritory={(t) => setSelectedTerritory(t)}
+              isPublisherOnly={true}
+              onRequestAdminLogin={() => setIsAdminPinModalOpen(true)}
+              onBack={() => setSelectedTerritory(null)}
+              onUpdateLocationStatus={handleUpdateLocationStatus}
+              onUpdateUnitStatus={handleUpdateUnitStatus}
+              onUpdateNotes={handleUpdateNotes}
+              onShare={(t) => setShareTerritory(t)}
+              onReturnTerritory={(t) => setReturningTerritory(t)}
               onSaveFieldNote={handleSaveFieldNote}
               onDeleteFieldNote={handleDeleteFieldNote}
               onAddNewLocationAtPoint={handleAddNewLocationAtPoint}
               onSaveFreehandDrawing={handleSaveFreehandDrawing}
               onClearFreehandDrawings={handleClearFreehandDrawings}
-              onStartDrawing={() => {
-                const target = selectedTerritory || territories[0];
-                if (target) setAnnotatingTerritory(target);
-              }}
             />
-          </div>
-        ) : currentView === 'history' ? (
-          <VisitsHistory
-            visits={visits}
-            territories={territories}
-            onDeleteVisit={handleDeleteVisit}
-            onSelectTerritory={(t) => setSelectedTerritory(t)}
-          />
-        ) : currentView === 'account' ? (
-          <AccountTerritoriesView
-            territories={territories}
-            locations={locations}
-            publishers={publishers}
-            serviceGroups={serviceGroups}
-            settings={settings}
-            onOpenTerritory={(t) => {
-              setSelectedTerritory(t);
-              setCurrentView('list');
-            }}
-            onAssignTerritory={(t) => setAssigningTerritory(t)}
-            onReturnTerritory={(t) => setReturningTerritory(t)}
-            onEditBoundary={(t) => setEditingBoundaryTerritory(t)}
-            onPrintTerritory={(t) => setPrintingTerritory(t)}
-            onRefreshData={loadAllData}
-            onSwitchToPublisherView={() => {
-              setSelectedTerritory(null);
-              setCurrentView('list');
-            }}
-            onOpenDesigner={() => setIsDesignerOpen(true)}
-          />
+          ) : (
+            <PublisherPortalView
+              territories={territories}
+              locations={locations}
+              publishers={publishers}
+              currentPublisherName={settings.publisherName}
+              onSelectPublisherName={async (name) => {
+                const updated = { ...settings, publisherName: name };
+                setSettings(updated);
+                await StorageService.saveSettings(updated);
+              }}
+              onOpenTerritory={(t) => setSelectedTerritory(t)}
+              onOpenScanner={() => setIsScannerOpen(true)}
+              onRequestTerritory={() => setIsRequestTerritoryOpen(true)}
+              onRequestAdminLogin={() => setIsAdminPinModalOpen(true)}
+            />
+          )
         ) : (
-          <TerritoryList
-            territories={territories}
-            locations={locations}
-            onSelectTerritory={(t) => setSelectedTerritory(t)}
-            onOpenMap={() => setCurrentView('map')}
-            onAddNewTerritory={handleAddNewTerritory}
-            onShareTerritory={(t) => setShareTerritory(t)}
-            onOpenScanner={() => setIsScannerOpen(true)}
-            onAssignTerritory={(t) => setAssigningTerritory(t)}
-            onReturnTerritory={(t) => setReturningTerritory(t)}
-            onPrintTerritory={(t) => setPrintingTerritory(t)}
-            onRequestTerritory={() => setIsRequestTerritoryOpen(true)}
-          />
+          /* Vue Administrateur Authentifié */
+          selectedTerritory ? (
+            <TerritoryDetail
+              territory={selectedTerritory}
+              locations={locations}
+              isPublisherOnly={false}
+              onBack={() => setSelectedTerritory(null)}
+              onUpdateLocationStatus={handleUpdateLocationStatus}
+              onUpdateUnitStatus={handleUpdateUnitStatus}
+              onUpdateNotes={handleUpdateNotes}
+              onShare={(t) => setShareTerritory(t)}
+              onOpenAnnotate={(t) => setAnnotatingTerritory(t)}
+              onReturnTerritory={(t) => setReturningTerritory(t)}
+              onAssignTerritory={(t) => setAssigningTerritory(t)}
+              onPrint={(t) => setPrintingTerritory(t)}
+              onSaveFieldNote={handleSaveFieldNote}
+              onDeleteFieldNote={handleDeleteFieldNote}
+              onAddNewLocationAtPoint={handleAddNewLocationAtPoint}
+              onSaveFreehandDrawing={handleSaveFreehandDrawing}
+              onClearFreehandDrawings={handleClearFreehandDrawings}
+            />
+          ) : currentView === 'map' ? (
+            <div style={{ height: 'calc(100vh - 65px)', width: '100%' }}>
+              <TerritoryMap
+                territories={territories}
+                selectedTerritory={null}
+                locations={locations}
+                onSelectTerritory={(t) => setSelectedTerritory(t)}
+                onSaveFieldNote={handleSaveFieldNote}
+                onDeleteFieldNote={handleDeleteFieldNote}
+                onAddNewLocationAtPoint={handleAddNewLocationAtPoint}
+                onSaveFreehandDrawing={handleSaveFreehandDrawing}
+                onClearFreehandDrawings={handleClearFreehandDrawings}
+                onStartDrawing={() => {
+                  const target = selectedTerritory || territories[0];
+                  if (target) setAnnotatingTerritory(target);
+                }}
+              />
+            </div>
+          ) : currentView === 'history' ? (
+            <VisitsHistory
+              visits={visits}
+              territories={territories}
+              onDeleteVisit={handleDeleteVisit}
+              onSelectTerritory={(t) => setSelectedTerritory(t)}
+            />
+          ) : currentView === 'account' ? (
+            <AccountTerritoriesView
+              territories={territories}
+              locations={locations}
+              publishers={publishers}
+              serviceGroups={serviceGroups}
+              settings={settings}
+              onOpenTerritory={(t) => {
+                setSelectedTerritory(t);
+                setCurrentView('list');
+              }}
+              onAssignTerritory={(t) => setAssigningTerritory(t)}
+              onReturnTerritory={(t) => setReturningTerritory(t)}
+              onEditBoundary={(t) => setEditingBoundaryTerritory(t)}
+              onPrintTerritory={(t) => setPrintingTerritory(t)}
+              onRefreshData={loadAllData}
+              onSwitchToPublisherView={() => {
+                setIsAdminAuthenticated(false);
+                sessionStorage.removeItem('kbv_admin_auth');
+                setSelectedTerritory(null);
+              }}
+              onOpenDesigner={() => setIsDesignerOpen(true)}
+            />
+          ) : (
+            <TerritoryList
+              territories={territories}
+              locations={locations}
+              onSelectTerritory={(t) => setSelectedTerritory(t)}
+              onOpenMap={() => setCurrentView('map')}
+              onAddNewTerritory={handleAddNewTerritory}
+              onShareTerritory={(t) => setShareTerritory(t)}
+              onOpenScanner={() => setIsScannerOpen(true)}
+              onAssignTerritory={(t) => setAssigningTerritory(t)}
+              onReturnTerritory={(t) => setReturningTerritory(t)}
+              onPrintTerritory={(t) => setPrintingTerritory(t)}
+              onRequestTerritory={() => setIsRequestTerritoryOpen(true)}
+            />
+          )
         )}
       </main>
 
@@ -829,63 +1046,139 @@ export const App: React.FC = () => {
         />
       )}
 
+      {/* Modale Code PIN d'accès Administrateur */}
+      {isAdminPinModalOpen && (
+        <AdminPinModal
+          correctPin={settings.adminPin || '1914'}
+          onSuccess={() => {
+            setIsAdminAuthenticated(true);
+            sessionStorage.setItem('kbv_admin_auth', 'true');
+            setIsAdminPinModalOpen(false);
+            if (pendingAdminAction) {
+              pendingAdminAction();
+              setPendingAdminAction(null);
+            } else {
+              setCurrentView('account');
+            }
+          }}
+          onClose={() => {
+            setIsAdminPinModalOpen(false);
+            setPendingAdminAction(null);
+          }}
+        />
+      )}
+
       {/* Barre de navigation inférieure pour Smartphone & Tablette (Publisher Mobile-First Nav) */}
       <nav className="mobile-bottom-nav">
-        <button
-          type="button"
-          onClick={() => {
-            setSelectedTerritory(null);
-            setCurrentView('list');
-          }}
-          className={`mobile-nav-item touch-target ${currentView === 'list' && !selectedTerritory ? 'active' : ''}`}
-          title={t.territories}
-        >
-          <BookOpen size={20} />
-          <span>{t.territories}</span>
-        </button>
+        {!isAdminAuthenticated ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setSelectedTerritory(null)}
+              className={`mobile-nav-item touch-target ${!selectedTerritory ? 'active' : ''}`}
+              title="Mes Territoires"
+            >
+              <Compass size={20} />
+              <span>Accueil</span>
+            </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            setSelectedTerritory(null);
-            setCurrentView('map');
-          }}
-          className={`mobile-nav-item touch-target ${currentView === 'map' ? 'active' : ''}`}
-          title={t.globalMap}
-        >
-          <Compass size={20} />
-          <span>{t.globalMap}</span>
-        </button>
+            <button
+              type="button"
+              onClick={() => setIsScannerOpen(true)}
+              className="mobile-nav-item touch-target"
+              title={t.scanQr}
+            >
+              <Camera size={20} />
+              <span>Scanner</span>
+            </button>
 
-        <button
-          type="button"
-          onClick={() => setIsScannerOpen(true)}
-          className="mobile-nav-item touch-target"
-          title={t.scanQr}
-        >
-          <Camera size={20} />
-          <span>{t.scanQr}</span>
-        </button>
+            <button
+              type="button"
+              onClick={() => setIsRequestTerritoryOpen(true)}
+              className="mobile-nav-item touch-target"
+              title={t.requestTerritory}
+            >
+              <HelpCircle size={20} />
+              <span>Demander</span>
+            </button>
 
-        <button
-          type="button"
-          onClick={() => setIsRequestTerritoryOpen(true)}
-          className="mobile-nav-item touch-target"
-          title={t.requestTerritory}
-        >
-          <HelpCircle size={20} />
-          <span>{t.requestTerritory}</span>
-        </button>
+            <button
+              type="button"
+              onClick={() => setIsAdminPinModalOpen(true)}
+              className="mobile-nav-item touch-target"
+              title="Accès Responsable"
+            >
+              <Lock size={20} color="#f59e0b" />
+              <span>Responsable</span>
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedTerritory(null);
+                setCurrentView('list');
+              }}
+              className={`mobile-nav-item touch-target ${currentView === 'list' && !selectedTerritory ? 'active' : ''}`}
+              title={t.territories}
+            >
+              <BookOpen size={20} />
+              <span>{t.territories}</span>
+            </button>
 
-        <button
-          type="button"
-          onClick={() => setIsSettingsOpen(true)}
-          className="mobile-nav-item touch-target"
-          title={t.settings}
-        >
-          <Settings size={20} />
-          <span>{t.settings}</span>
-        </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedTerritory(null);
+                setCurrentView('map');
+              }}
+              className={`mobile-nav-item touch-target ${currentView === 'map' ? 'active' : ''}`}
+              title={t.globalMap}
+            >
+              <Compass size={20} />
+              <span>{t.globalMap}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedTerritory(null);
+                setCurrentView('account');
+              }}
+              className={`mobile-nav-item touch-target ${currentView === 'account' ? 'active' : ''}`}
+              title="Gestion & Attributions"
+            >
+              <FileSpreadsheet size={20} />
+              <span>Gestion</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen(true)}
+              className="mobile-nav-item touch-target"
+              title={t.settings}
+            >
+              <Settings size={20} />
+              <span>{t.settings}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsAdminAuthenticated(false);
+                sessionStorage.removeItem('kbv_admin_auth');
+                setSelectedTerritory(null);
+              }}
+              className="mobile-nav-item touch-target"
+              title="Verrouiller"
+              style={{ color: '#ef4444' }}
+            >
+              <Lock size={20} />
+              <span>Verrouiller</span>
+            </button>
+          </>
+        )}
       </nav>
     </div>
   );
