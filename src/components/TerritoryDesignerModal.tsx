@@ -11,7 +11,11 @@ import {
   Undo2,
   Check,
   Split,
-  Combine
+  Combine,
+  Users,
+  Sparkles,
+  Building2,
+  CheckCircle2
 } from 'lucide-react';
 import type { Territory, LocationItem, TerritoryType } from '../types';
 import { 
@@ -20,6 +24,7 @@ import {
   calculatePolygonArea, 
   splitPolygonByLine,
   autoSplitPolygon,
+  multiSplitPolygon,
   isPointInPolygon,
   exportCongregationToGeoJSON 
 } from '../utils/geometry';
@@ -44,6 +49,18 @@ const TERRITORY_COLORS = [
   '#14b8a6', // Teal
 ];
 
+export interface MultiSplitPartItem {
+  id: string;
+  num: string;
+  label: string;
+  boundary: LatLngTuple[];
+  doorsCount: number;
+  areaFormatted: string;
+  areaM2: number;
+  estMinutes: number;
+  color: string;
+}
+
 export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
   territories: initialTerritories,
   locations: initialLocations,
@@ -55,13 +72,13 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
   const [locations, setLocations] = useState<LocationItem[]>(initialLocations);
   
   // Outil actif
-  const [tool, setTool] = useState<'select' | 'split' | 'draw' | 'merge'>('select');
+  const [tool, setTool] = useState<'select' | 'split' | 'draw' | 'merge' | 'autosplit'>('select');
   const [selectedTerritoryId, setSelectedTerritoryId] = useState<string | null>(initialTerritories[0]?.id || null);
 
   // Pour la fusion (sélection de 2 territoires)
   const [mergeSecondaryId, setMergeSecondaryId] = useState<string | null>(null);
 
-  // État Découpage (Cutter / Split)
+  // État Découpage Manuel (Cutter / Split)
   const [cutPoints, setCutPoints] = useState<LatLngTuple[]>([]);
   const [splitPreview, setSplitPreview] = useState<{
     targetTerritory: Territory;
@@ -71,6 +88,24 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
     numA: string;
     nameB: string;
     numB: string;
+  } | null>(null);
+
+  // État Découpage Automatique Intelligent (2h / KBV / Binômes)
+  const [multiSplitConfig, setMultiSplitConfig] = useState<{
+    pairsCount: number; // 2, 3, 4, 5 binômes (soit 4 à 10 proclamateurs)
+    terrainType: 'urban_dense' | 'residential_dispersed' | 'kbv_linguistic';
+    preferredDirection: 'balanced' | 'horizontal' | 'vertical';
+    targetDurationHours: number;
+  }>({
+    pairsCount: 3,
+    terrainType: 'kbv_linguistic',
+    preferredDirection: 'balanced',
+    targetDurationHours: 2
+  });
+
+  const [multiSplitPreview, setMultiSplitPreview] = useState<{
+    targetTerritory: Territory;
+    parts: MultiSplitPartItem[];
   } | null>(null);
 
   // État Tracé d'un nouveau territoire (Draw)
@@ -92,6 +127,7 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
   const polygonsLayerGroupRef = useRef<L.FeatureGroup | null>(null);
   const handlesLayerGroupRef = useRef<L.FeatureGroup | null>(null);
   const midpointsLayerGroupRef = useRef<L.FeatureGroup | null>(null);
+  const multiSplitLayerGroupRef = useRef<L.FeatureGroup | null>(null);
   const cutLineLayerRef = useRef<L.Polyline | null>(null);
   const drawLayerRef = useRef<L.Polygon | null>(null);
 
@@ -177,10 +213,12 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
     const polygonsGroup = L.featureGroup().addTo(map);
     const handlesGroup = L.featureGroup().addTo(map);
     const midpointsGroup = L.featureGroup().addTo(map);
+    const multiSplitGroup = L.featureGroup().addTo(map);
 
     polygonsLayerGroupRef.current = polygonsGroup;
     handlesLayerGroupRef.current = handlesGroup;
     midpointsLayerGroupRef.current = midpointsGroup;
+    multiSplitLayerGroupRef.current = multiSplitGroup;
     mapInstanceRef.current = map;
 
     // Clic sur la carte
@@ -197,7 +235,7 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
     };
   }, []);
 
-  // Découpage automatique d'un polygone selon l'axe Nord-Sud ou Est-Ouest
+  // Découpage automatique d'un polygone selon l'axe Nord-Sud ou Est-Ouest (2 parties)
   const handleAutoSplit = (direction: 'horizontal' | 'vertical') => {
     if (!selectedTerritory) return;
 
@@ -218,6 +256,137 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
       nameB: selectedTerritory.label + (direction === 'horizontal' ? ' (Sud)' : ' (Est)')
     });
     setStatusMessage(`Découpe automatique (${direction === 'horizontal' ? 'Nord/Sud' : 'Est/Ouest'}) calculée avec succès !`);
+  };
+
+  // Calcul du Découpage Intelligent Spécifique Prédication 2h / KBV (2 à 5 binômes)
+  const handleCalculateMultiSplit = () => {
+    if (!selectedTerritory) {
+      alert('Veuillez sélectionner un territoire à découper.');
+      return;
+    }
+
+    if (selectedTerritory.boundary.length < 3) {
+      alert('Ce territoire ne comporte pas un polygone valide (au moins 3 sommets).');
+      return;
+    }
+
+    const subPolygons = multiSplitPolygon(
+      selectedTerritory.boundary,
+      multiSplitConfig.pairsCount,
+      multiSplitConfig.preferredDirection
+    );
+
+    if (!subPolygons || subPolygons.length < 2) {
+      alert('Impossible de scinder automatiquement ce polygone avec ces paramètres. Essayez une autre orientation.');
+      return;
+    }
+
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+    const parts: MultiSplitPartItem[] = subPolygons.map((poly, idx) => {
+      const letter = letters[idx] || String(idx + 1);
+      const partNum = `${selectedTerritory.number}${letter}`;
+      const partLabel = `${selectedTerritory.label} (Secteur ${letter} - Binôme ${idx + 1})`;
+      const areaM2 = calculatePolygonArea(poly);
+      const areaFormatted = areaM2 > 10000 
+        ? `${(areaM2 / 10000).toFixed(2)} ha` 
+        : `${areaM2.toLocaleString()} m²`;
+
+      // Comptage précis des adresses/portes du territoire parent situées dans ce sous-secteur
+      const doorsCount = locations.filter(loc => 
+        loc.territoryId === selectedTerritory.id && isPointInPolygon(loc.latLng, poly)
+      ).length;
+
+      // Estimation fine de la durée en minutes pour un binôme selon la nature du terrain
+      let estMinutes = 120; // Objectif 2h
+      if (multiSplitConfig.terrainType === 'urban_dense') {
+        // Immeubles denses : 15 min marche/escaliers + 1.2 min/porte
+        estMinutes = doorsCount > 0 
+          ? Math.round(15 + doorsCount * 1.2)
+          : Math.min(135, Math.max(85, Math.round(20 + (areaM2 / 900) * 1.3)));
+      } else if (multiSplitConfig.terrainType === 'residential_dispersed') {
+        // Pavillonnaire dispersé : 25 min marche entre maisons + 2.8 min/porte
+        estMinutes = doorsCount > 0 
+          ? Math.round(25 + doorsCount * 2.8)
+          : Math.min(145, Math.max(90, Math.round(30 + (areaM2 / 2200) * 2.2)));
+      } else {
+        // Recherche KBV linguistique (interphones / boîtes aux lettres à scruter)
+        estMinutes = doorsCount > 0 
+          ? Math.round(20 + doorsCount * 1.5)
+          : Math.min(135, Math.max(85, Math.round(22 + (areaM2 / 1300) * 1.6)));
+      }
+
+      return {
+        id: `sub-${Date.now()}-${idx}`,
+        num: partNum,
+        label: partLabel,
+        boundary: poly,
+        doorsCount,
+        areaM2,
+        areaFormatted,
+        estMinutes,
+        color: TERRITORY_COLORS[(idx * 2) % TERRITORY_COLORS.length]
+      };
+    });
+
+    setMultiSplitPreview({
+      targetTerritory: selectedTerritory,
+      parts
+    });
+
+    setStatusMessage(`⚡ Découpage calculé : ${parts.length} sous-territoires équilibrés pour ${multiSplitConfig.pairsCount} binômes (${multiSplitConfig.pairsCount * 2} proclamateurs) !`);
+  };
+
+  // Mise à jour rapide d'un sous-secteur calculé
+  const handleUpdateMultiSplitPart = (index: number, updates: Partial<MultiSplitPartItem>) => {
+    if (!multiSplitPreview) return;
+    const newParts = [...multiSplitPreview.parts];
+    newParts[index] = { ...newParts[index], ...updates };
+    setMultiSplitPreview({ ...multiSplitPreview, parts: newParts });
+  };
+
+  // Validation définitive et application du découpage multi-parties
+  const handleApplyMultiSplit = () => {
+    if (!multiSplitPreview || !selectedTerritory) return;
+
+    const newTerritoriesList: Territory[] = multiSplitPreview.parts.map((part, idx) => {
+      return {
+        ...selectedTerritory,
+        id: `terr-${Date.now().toString(36)}-${idx}`,
+        number: part.num.trim() || `${selectedTerritory.number}${String.fromCharCode(65 + idx)}`,
+        label: part.label.trim() || `${selectedTerritory.label} (Partie ${String.fromCharCode(65 + idx)})`,
+        boundary: part.boundary,
+        centerCoordinates: calculatePolygonCenter(part.boundary),
+        shortUrlCode: `LYON${part.num.trim().toUpperCase()}`,
+        status: 'available',
+        assignee: null,
+        dateAssigned: null,
+        dateDue: null
+      };
+    });
+
+    // Répartition spatiale automatique de toutes les adresses / portes existantes
+    const updatedLocations = locations.map(loc => {
+      if (loc.territoryId === selectedTerritory.id) {
+        const matched = newTerritoriesList.find(t => isPointInPolygon(loc.latLng, t.boundary));
+        if (matched) {
+          return { ...loc, territoryId: matched.id };
+        }
+        return { ...loc, territoryId: newTerritoriesList[0].id };
+      }
+      return loc;
+    });
+
+    // Remplacement du territoire parent par les nouveaux territoires découpés
+    const updatedTerritories = territories.filter(t => t.id !== selectedTerritory.id);
+    updatedTerritories.push(...newTerritoriesList);
+
+    setTerritories(updatedTerritories);
+    setLocations(updatedLocations);
+    setSelectedTerritoryId(newTerritoriesList[0].id);
+    setMultiSplitPreview(null);
+    setTool('select');
+    setHasUnsavedChanges(true);
+    setStatusMessage(`🎉 Territoire ${selectedTerritory.number} découpé avec succès en ${newTerritoriesList.length} nouveaux territoires (prêts pour vos ${multiSplitConfig.pairsCount} binômes) !`);
   };
 
   // Ajout d'un point au territoire sélectionné à une coordonnée ou au milieu d'un segment
@@ -267,11 +436,13 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
     const polygonsGroup = polygonsLayerGroupRef.current;
     const handlesGroup = handlesLayerGroupRef.current;
     const midpointsGroup = midpointsLayerGroupRef.current;
+    const multiSplitGroup = multiSplitLayerGroupRef.current;
     if (!map || !polygonsGroup || !handlesGroup || !midpointsGroup) return;
 
     polygonsGroup.clearLayers();
     handlesGroup.clearLayers();
     midpointsGroup.clearLayers();
+    if (multiSplitGroup) multiSplitGroup.clearLayers();
 
     if (cutLineLayerRef.current) {
       map.removeLayer(cutLineLayerRef.current);
@@ -286,17 +457,18 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
     territories.forEach((t, index) => {
       const isSelected = t.id === selectedTerritoryId;
       const isMergeSecondary = t.id === mergeSecondaryId;
+      const isBeingMultiSplit = tool === 'autosplit' && multiSplitPreview && t.id === multiSplitPreview.targetTerritory.id;
       const color = TERRITORY_COLORS[index % TERRITORY_COLORS.length];
 
       // En mode split ou draw, on laisse les clics traverser vers la carte
       const isDrawingOrSplitting = tool === 'split' || tool === 'draw';
 
       const polygon = L.polygon(t.boundary, {
-        color: isSelected ? '#38bdf8' : (isMergeSecondary ? '#f59e0b' : color),
-        weight: isSelected ? 3.5 : (isMergeSecondary ? 3 : 2),
+        color: isBeingMultiSplit ? 'rgba(255,255,255,0.4)' : (isSelected ? '#38bdf8' : (isMergeSecondary ? '#f59e0b' : color)),
+        weight: isBeingMultiSplit ? 1.5 : (isSelected ? 3.5 : (isMergeSecondary ? 3 : 2)),
         fillColor: isMergeSecondary ? '#f59e0b' : color,
-        fillOpacity: isSelected ? 0.35 : (isMergeSecondary ? 0.4 : 0.18),
-        dashArray: isSelected ? undefined : '4, 4',
+        fillOpacity: isBeingMultiSplit ? 0.05 : (isSelected ? 0.35 : (isMergeSecondary ? 0.4 : 0.18)),
+        dashArray: isBeingMultiSplit ? '6, 6' : (isSelected ? undefined : '4, 4'),
         interactive: true
       }).addTo(polygonsGroup);
 
@@ -492,7 +664,57 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
       }
     }
 
-  }, [territories, selectedTerritoryId, mergeSecondaryId, tool, cutPoints, newDrawPoints]);
+    // 5. Affichage dynamique des sous-territoires calculés (Mode Découpe Auto 'autosplit')
+    if (tool === 'autosplit' && multiSplitPreview && multiSplitGroup) {
+      multiSplitPreview.parts.forEach((part, idx) => {
+        L.polygon(part.boundary, {
+          color: part.color,
+          weight: 3.5,
+          fillColor: part.color,
+          fillOpacity: 0.45,
+          dashArray: undefined,
+          interactive: true
+        }).addTo(multiSplitGroup);
+
+        const center = calculatePolygonCenter(part.boundary);
+        const hours = Math.floor(part.estMinutes / 60);
+        const mins = part.estMinutes % 60;
+        const timeFormatted = mins > 0 ? `${hours}h${mins < 10 ? '0' : ''}${mins}` : `${hours}h`;
+
+        const badgeIcon = L.divIcon({
+          className: 'multi-split-label',
+          html: `
+            <div style="
+              background: ${part.color};
+              color: white;
+              padding: 4px 8px;
+              border-radius: 7px;
+              font-size: 11px;
+              font-weight: 800;
+              border: 1.5px solid white;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.55);
+              text-align: center;
+              white-space: nowrap;
+              pointer-events: none;
+            ">
+              <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
+                <span>👥 Binôme ${idx + 1}</span>
+                <span style="background: rgba(255,255,255,0.25); padding: 1px 4px; border-radius: 4px; font-size: 10px;">N° ${part.num}</span>
+              </div>
+              <div style="font-size: 9px; font-weight: 600; opacity: 0.95; margin-top: 2px;">
+                ${part.doorsCount > 0 ? `${part.doorsCount} adresses` : part.areaFormatted} • ~${timeFormatted}
+              </div>
+            </div>
+          `,
+          iconSize: [126, 42],
+          iconAnchor: [63, 21]
+        });
+
+        L.marker(center, { icon: badgeIcon, interactive: false }).addTo(multiSplitGroup);
+      });
+    }
+
+  }, [territories, selectedTerritoryId, mergeSecondaryId, tool, cutPoints, newDrawPoints, multiSplitPreview]);
 
   // Validation de la découpe (Split)
   const handleApplySplit = () => {
@@ -732,6 +954,33 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
 
           <button
             onClick={() => {
+              setTool('autosplit');
+              setCutPoints([]);
+              setSplitPreview(null);
+              setNewDrawPoints([]);
+              setMergeSecondaryId(null);
+              setStatusMessage('⚡ Mode Découpage Intelligent (2h / KBV) activé : Configurez vos binômes et lancez la découpe optimisée.');
+            }}
+            className={`btn ${tool === 'autosplit' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ 
+              padding: '0.4rem 0.8rem', 
+              fontSize: '0.8rem', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.35rem', 
+              background: tool === 'autosplit' ? 'linear-gradient(135deg, #0284c7 0%, #8b5cf6 100%)' : undefined,
+              color: tool === 'autosplit' ? '#ffffff' : undefined,
+              fontWeight: tool === 'autosplit' ? 700 : 500,
+              boxShadow: tool === 'autosplit' ? '0 2px 8px rgba(2, 132, 199, 0.4)' : undefined
+            }}
+            title="Découpage automatique pour groupe de prédication (5 à 10 proclamateurs en binômes, 2h)"
+          >
+            <Sparkles size={15} />
+            <span>⚡ Découpe Auto (2h / KBV)</span>
+          </button>
+
+          <button
+            onClick={() => {
               setTool('split');
               setNewDrawPoints([]);
               setMergeSecondaryId(null);
@@ -863,6 +1112,217 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
                     <span>Ajouter un sommet GPS libre</span>
                   </button>
                 )}
+              </div>
+            )}
+
+            {tool === 'autosplit' && (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
+                  <Sparkles size={16} color="#38bdf8" />
+                  <strong style={{ color: '#38bdf8', fontSize: '0.85rem' }}>
+                    Découpage Auto (2h / KBV) :
+                  </strong>
+                </div>
+                <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', margin: '0 0 0.65rem 0' }}>
+                  Calibré pour une sortie de <strong>2 heures</strong> avec <strong>5 à 10 proclamateurs</strong> en binômes recherchant les personnes capverdiennes.
+                </p>
+
+                {/* 1. Choix du nombre de binômes */}
+                <div style={{ marginBottom: '0.65rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.35rem' }}>
+                    <Users size={13} />
+                    <span>Effectif du groupe :</span>
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.3rem' }}>
+                    {[
+                      { pairs: 2, label: '2 binômes', people: '4-5 pers.' },
+                      { pairs: 3, label: '3 binômes', people: '6-7 pers.' },
+                      { pairs: 4, label: '4 binômes', people: '8 pers.' },
+                      { pairs: 5, label: '5 binômes', people: '10 pers.' },
+                    ].map((item) => {
+                      const isSel = multiSplitConfig.pairsCount === item.pairs;
+                      return (
+                        <button
+                          key={item.pairs}
+                          onClick={() => setMultiSplitConfig(prev => ({ ...prev, pairsCount: item.pairs }))}
+                          type="button"
+                          style={{
+                            padding: '0.35rem 0.2rem',
+                            borderRadius: '6px',
+                            background: isSel ? '#0284c7' : 'rgba(255,255,255,0.04)',
+                            border: `1px solid ${isSel ? '#38bdf8' : 'rgba(255,255,255,0.1)'}`,
+                            color: '#fff',
+                            cursor: 'pointer',
+                            textAlign: 'center'
+                          }}
+                        >
+                          <div style={{ fontSize: '0.72rem', fontWeight: 800 }}>{item.label}</div>
+                          <div style={{ fontSize: '0.6rem', color: isSel ? '#e0f2fe' : 'var(--text-muted)' }}>{item.people}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. Type de terrain & rythme de recherche */}
+                <div style={{ marginBottom: '0.65rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.35rem' }}>
+                    <Building2 size={13} />
+                    <span>Configuration de la zone :</span>
+                  </label>
+                  <select
+                    value={multiSplitConfig.terrainType}
+                    onChange={(e) => setMultiSplitConfig(prev => ({ ...prev, terrainType: e.target.value as any }))}
+                    className="input-field"
+                    style={{ width: '100%', fontSize: '0.75rem', padding: '0.35rem 0.5rem' }}
+                  >
+                    <option value="kbv_linguistic">🇨🇻 Recherche KBV (Interphones & Boîtes)</option>
+                    <option value="urban_dense">🏢 Immeubles denses & Pâtés groupés</option>
+                    <option value="residential_dispersed">🏡 Pavillonnaire dispersé (Plus de marche)</option>
+                  </select>
+                </div>
+
+                {/* 3. Orientation de la découpe */}
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.35rem' }}>
+                    Tranchage géographique :
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.25rem' }}>
+                    {[
+                      { id: 'balanced', label: '⚡ Équilibré' },
+                      { id: 'horizontal', label: '↕️ Nord/Sud' },
+                      { id: 'vertical', label: '↔️ Est/Ouest' }
+                    ].map((dir) => {
+                      const isSel = multiSplitConfig.preferredDirection === dir.id;
+                      return (
+                        <button
+                          key={dir.id}
+                          onClick={() => setMultiSplitConfig(prev => ({ ...prev, preferredDirection: dir.id as any }))}
+                          type="button"
+                          style={{
+                            padding: '0.3rem',
+                            borderRadius: '5px',
+                            background: isSel ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.03)',
+                            border: `1px solid ${isSel ? '#38bdf8' : 'rgba(255,255,255,0.08)'}`,
+                            color: isSel ? '#38bdf8' : 'var(--text-secondary)',
+                            fontSize: '0.7rem',
+                            fontWeight: isSel ? 700 : 500,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {dir.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 4. Bouton principal de calcul */}
+                <button
+                  onClick={handleCalculateMultiSplit}
+                  className="btn btn-primary"
+                  style={{
+                    width: '100%',
+                    fontSize: '0.78rem',
+                    padding: '0.5rem',
+                    background: 'linear-gradient(135deg, #0284c7 0%, #6366f1 100%)',
+                    borderColor: '#38bdf8',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.4rem',
+                    boxShadow: '0 3px 8px rgba(2, 132, 199, 0.3)'
+                  }}
+                >
+                  <Sparkles size={15} />
+                  <span>Calculer la répartition ({multiSplitConfig.pairsCount} binômes)</span>
+                </button>
+
+                {/* 5. Prévisualisation & Validation des sous-territoires */}
+                {multiSplitPreview && (
+                  <div style={{ marginTop: '0.85rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '0.75rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem' }}>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#34d399', textTransform: 'uppercase' }}>
+                        ✓ {multiSplitPreview.parts.length} Secteurs prêts (~2h chacun) :
+                      </span>
+                      <button
+                        onClick={() => setMultiSplitPreview(null)}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.68rem', cursor: 'pointer' }}
+                      >
+                        Annuler
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', maxHeight: '180px', overflowY: 'auto', marginBottom: '0.75rem' }}>
+                      {multiSplitPreview.parts.map((p, pIdx) => {
+                        const hrs = Math.floor(p.estMinutes / 60);
+                        const mins = p.estMinutes % 60;
+                        const timeStr = mins > 0 ? `${hrs}h${mins < 10 ? '0' : ''}${mins}` : `${hrs}h`;
+
+                        return (
+                          <div
+                            key={p.id}
+                            style={{
+                              background: 'rgba(0,0,0,0.3)',
+                              border: `1px solid ${p.color}`,
+                              borderRadius: '6px',
+                              padding: '0.45rem 0.6rem'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem', marginBottom: '0.25rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <div style={{ width: 10, height: 10, borderRadius: '50%', background: p.color, flexShrink: 0 }} />
+                                <strong style={{ fontSize: '0.76rem', color: '#fff' }}>Binôme {pIdx + 1}</strong>
+                              </div>
+                              <input
+                                type="text"
+                                value={p.num}
+                                onChange={(e) => handleUpdateMultiSplitPart(pIdx, { num: e.target.value })}
+                                style={{
+                                  width: '55px',
+                                  fontSize: '0.72rem',
+                                  padding: '0.15rem 0.35rem',
+                                  background: 'rgba(255,255,255,0.08)',
+                                  border: '1px solid rgba(255,255,255,0.2)',
+                                  borderRadius: '4px',
+                                  color: '#fff',
+                                  textAlign: 'center',
+                                  fontWeight: 800
+                                }}
+                                title="Numéro du sous-territoire"
+                              />
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                              <span>{p.doorsCount > 0 ? `${p.doorsCount} portes réparties` : p.areaFormatted}</span>
+                              <span style={{ color: '#38bdf8', fontWeight: 600 }}>Temps : ~{timeStr}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      onClick={handleApplyMultiSplit}
+                      className="btn btn-primary"
+                      style={{
+                        width: '100%',
+                        fontSize: '0.78rem',
+                        padding: '0.45rem',
+                        background: '#10b981',
+                        borderColor: '#10b981',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.35rem',
+                        fontWeight: 700
+                      }}
+                    >
+                      <CheckCircle2 size={15} />
+                      <span>Confirmer et Créer les {multiSplitPreview.parts.length} Territoires</span>
+                    </button>
+                  </div>
+                )}
+
               </div>
             )}
 

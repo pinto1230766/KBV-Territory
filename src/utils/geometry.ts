@@ -212,6 +212,112 @@ export function autoSplitPolygon(
   }
 }
 
+// Découpe multi-parties équilibrée pour 2, 3, 4 ou 5 binômes (durée 2h de prédication)
+export function multiSplitPolygon(
+  polygon: LatLngTuple[],
+  partsCount: number,
+  preferredDirection?: 'horizontal' | 'vertical' | 'balanced'
+): LatLngTuple[][] | null {
+  if (polygon.length < 3 || partsCount < 2) return null;
+
+  // Calcul de la boîte englobante
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+
+  for (const [lat, lng] of polygon) {
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
+  }
+
+  const spanLat = maxLat - minLat;
+  const spanLng = maxLng - minLng;
+
+  // Déterminer la direction optimale selon l'élongation géographique
+  const direction: 'horizontal' | 'vertical' =
+    preferredDirection === 'horizontal' ? 'horizontal' :
+    preferredDirection === 'vertical' ? 'vertical' :
+    (spanLat >= spanLng ? 'horizontal' : 'vertical');
+
+  // Cas N = 2 : simple coupe médiane
+  if (partsCount === 2) {
+    const res = autoSplitPolygon(polygon, direction);
+    return res ? [res[0], res[1]] : null;
+  }
+
+  // Cas N = 4 avec découpe en quadrant 2x2
+  if (partsCount === 4 && preferredDirection !== 'horizontal' && preferredDirection !== 'vertical') {
+    const split1 = autoSplitPolygon(polygon, 'horizontal');
+    if (split1) {
+      const [north, south] = split1;
+      const splitNorth = autoSplitPolygon(north, 'vertical');
+      const splitSouth = autoSplitPolygon(south, 'vertical');
+
+      const parts: LatLngTuple[][] = [];
+      if (splitNorth) parts.push(splitNorth[0], splitNorth[1]);
+      else parts.push(north);
+
+      if (splitSouth) parts.push(splitSouth[0], splitSouth[1]);
+      else parts.push(south);
+
+      if (parts.length >= 3) return parts;
+    }
+  }
+
+  // Découpe séquentielle en tranches régulières (pour N = 3, 4 ou 5)
+  const results: LatLngTuple[][] = [];
+  let remainingPolygon = [...polygon];
+
+  for (let i = 1; i < partsCount; i++) {
+    if (direction === 'horizontal') {
+      const cutLat = minLat + spanLat * (i / partsCount);
+      const cutStart: LatLngTuple = [cutLat, minLng - spanLng * 2];
+      const cutEnd: LatLngTuple = [cutLat, maxLng + spanLng * 2];
+      const split = splitPolygonByLine(remainingPolygon, cutStart, cutEnd) || autoSplitPolygon(remainingPolygon, 'horizontal');
+
+      if (split) {
+        const c0 = calculatePolygonCenter(split[0]);
+        const c1 = calculatePolygonCenter(split[1]);
+        // Le sous-polygone au Sud (lat plus basse) devient la tranche finie, le Nord reste à couper
+        if (c0[0] <= c1[0]) {
+          results.push(split[0]);
+          remainingPolygon = split[1];
+        } else {
+          results.push(split[1]);
+          remainingPolygon = split[0];
+        }
+      }
+    } else {
+      const cutLng = minLng + spanLng * (i / partsCount);
+      const cutStart: LatLngTuple = [minLat - spanLat * 2, cutLng];
+      const cutEnd: LatLngTuple = [maxLat + spanLat * 2, cutLng];
+      const split = splitPolygonByLine(remainingPolygon, cutStart, cutEnd) || autoSplitPolygon(remainingPolygon, 'vertical');
+
+      if (split) {
+        const c0 = calculatePolygonCenter(split[0]);
+        const c1 = calculatePolygonCenter(split[1]);
+        // Le sous-polygone à l'Ouest (lng plus basse) devient la tranche finie, l'Est reste à couper
+        if (c0[1] <= c1[1]) {
+          results.push(split[0]);
+          remainingPolygon = split[1];
+        } else {
+          results.push(split[1]);
+          remainingPolygon = split[0];
+        }
+      }
+    }
+  }
+
+  if (remainingPolygon && remainingPolygon.length >= 3) {
+    results.push(remainingPolygon);
+  }
+
+  return results.length >= 2 ? results : null;
+}
+
 // Convertisseur GeoJSON pour export officiel
 export function exportCongregationToGeoJSON(territories: { id: string; number: string; label: string; type: string; boundary: LatLngTuple[] }[]) {
   const features = territories.map(t => {
