@@ -124,6 +124,7 @@ export interface Territory {
   freehandDrawings?: FreehandDrawing[]; // Tracés manuscrits et croix vectorielles géolocalisées
   receiptAcknowledged?: boolean;       // Accusé de réception confirmé par le proclamateur
   receiptAcknowledgedDate?: string | null;
+  lastReminderDate?: string | null;       // Date du dernier rappel/relance envoyé au proclamateur
 }
 
 export interface TerritoryRequest {

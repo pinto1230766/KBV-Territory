@@ -21,7 +21,8 @@ import {
   Trees,
   Layers,
   Scissors,
-  MessageCircle
+  MessageCircle,
+  Bell
 } from 'lucide-react';
 import type { 
   Territory, 
@@ -33,6 +34,7 @@ import type {
   TerritoryType
 } from '../types';
 import { StorageService } from '../services/storage';
+import { TerritoryReminderModal } from './TerritoryReminderModal';
 
 interface AccountTerritoriesViewProps {
   territories: Territory[];
@@ -84,6 +86,12 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
   const [requests, setRequests] = useState<TerritoryRequest[]>([]);
   const [isNewTerritoryModalOpen, setIsNewTerritoryModalOpen] = useState(false);
   const [batchPrintTerritories, setBatchPrintTerritories] = useState<Territory[] | null>(null);
+  
+  // Modale de rappel / relance proclamateur (WhatsApp / SMS)
+  const [reminderTerritory, setReminderTerritory] = useState<Territory | null>(null);
+
+  // Filtre seuil de durée en mois pour les relances (0 = échéance officielle dateDue, 2 = plus de 2 mois, 3 = plus de 3 mois, 4 = plus de 4 mois)
+  const [overdueThresholdMonths, setOverdueThresholdMonths] = useState<number>(0);
 
   // Formulaire nouveau territoire
   const [newNumber, setNewNumber] = useState('');
@@ -111,6 +119,19 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
     return today > due;
   };
 
+  // Vérifie si un territoire doit être relancé selon le seuil sélectionné (2, 3, 4 mois ou échéance)
+  const isTerritoryDueForReminder = (terr: Territory, thresholdMonths: number = overdueThresholdMonths): boolean => {
+    if (terr.status === 'available' || !terr.assignee) return false;
+    if (thresholdMonths > 0) {
+      if (!terr.dateAssigned) return false;
+      const assigned = new Date(terr.dateAssigned).getTime();
+      const now = new Date().getTime();
+      const days = (now - assigned) / (1000 * 3600 * 24);
+      return days >= (thresholdMonths * 30.4);
+    }
+    return isTerritoryOverdue(terr);
+  };
+
   const getDaysOverdue = (terr: Territory): number => {
     if (!terr.dateDue) return 0;
     const today = new Date().getTime();
@@ -129,11 +150,33 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
     return Math.floor(diff / (1000 * 3600 * 24));
   };
 
+  const getMonthsAssigned = (terr: Territory): number => {
+    if (!terr.dateAssigned) return 0;
+    const days = getDaysAssigned(terr);
+    return Math.max(1, Math.round((days / 30.4) * 10) / 10);
+  };
+
+  // Enregistrement de l'envoi d'une relance pour mémoire
+  const handleRecordReminderSent = async (territoryId: string, _method: 'whatsapp' | 'sms' | 'copy') => {
+    const todayIso = new Date().toISOString();
+    const updated = territories.map(t => {
+      if (t.id === territoryId) {
+        return {
+          ...t,
+          lastReminderDate: todayIso
+        };
+      }
+      return t;
+    });
+    await StorageService.saveTerritories(updated);
+    onRefreshData();
+  };
+
   // KPIs
   const totalCount = territories.length;
   const assignedCount = territories.filter(t => t.status === 'assigned' || t.status === 'in_progress').length;
   const availableCount = territories.filter(t => t.status === 'available').length;
-  const overdueCount = territories.filter(t => isTerritoryOverdue(t)).length;
+  const overdueCount = territories.filter(t => isTerritoryDueForReminder(t, overdueThresholdMonths)).length;
   const pendingRequestsCount = requests.filter(r => r.status === 'pending').length;
   const percentAssigned = totalCount > 0 ? Math.round((assignedCount / totalCount) * 100) : 0;
 
@@ -144,7 +187,7 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
       if (statusFilter === 'available' && t.status !== 'available') return false;
       if (statusFilter === 'assigned' && t.status !== 'assigned') return false;
       if (statusFilter === 'in_progress' && t.status !== 'in_progress') return false;
-      if (statusFilter === 'overdue' && !isTerritoryOverdue(t)) return false;
+      if (statusFilter === 'overdue' && !isTerritoryDueForReminder(t, overdueThresholdMonths)) return false;
 
       // Filtre groupe
       if (groupFilter !== 'all' && t.serviceGroupId !== groupFilter) return false;
@@ -764,6 +807,58 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
           </button>
         </div>
 
+        {/* Barre de configuration spécifique aux Relances & Territoires Détenus (2, 3 ou 4 mois) */}
+        {statusFilter === 'overdue' && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '0.75rem',
+            padding: '0.75rem 1rem',
+            marginBottom: '0.75rem',
+            background: 'rgba(239, 68, 68, 0.08)',
+            border: '1px solid rgba(239, 68, 68, 0.25)',
+            borderRadius: '10px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#f87171', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Clock size={15} /> Critère de relance :
+              </span>
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                {[
+                  { value: 0, label: 'Échéance officielle (dateDue)' },
+                  { value: 2, label: 'Détenu depuis > 2 mois' },
+                  { value: 3, label: 'Détenu depuis > 3 mois' },
+                  { value: 4, label: 'Détenu depuis > 4 mois' }
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setOverdueThresholdMonths(opt.value)}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.75rem',
+                      borderRadius: '6px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      border: overdueThresholdMonths === opt.value ? '1px solid #ef4444' : '1px solid rgba(255,255,255,0.1)',
+                      background: overdueThresholdMonths === opt.value ? 'rgba(239, 68, 68, 0.35)' : 'rgba(255,255,255,0.04)',
+                      color: overdueThresholdMonths === opt.value ? '#fca5a5' : 'var(--text-secondary)'
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              <strong style={{ color: '#fff' }}>{overdueCount}</strong> territoire(s) nécessitant une relance.
+            </div>
+          </div>
+        )}
+
         {/* Ligne 2 : Recherche et sélecteurs de filtres */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
           
@@ -1210,9 +1305,14 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
                       {terr.dateAssigned ? (
                         <div>
                           <div style={{ fontWeight: 600 }}>{new Date(terr.dateAssigned).toLocaleDateString('fr-FR')}</div>
-                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                            il y a {daysAssigned} j
+                          <div style={{ fontSize: '0.7rem', color: daysAssigned >= 60 ? '#f59e0b' : 'var(--text-muted)', fontWeight: daysAssigned >= 60 ? 700 : 'normal' }}>
+                            {getMonthsAssigned(terr)} mois ({daysAssigned} j)
                           </div>
+                          {terr.lastReminderDate && (
+                            <div style={{ fontSize: '0.68rem', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 3, marginTop: 2, fontWeight: 700 }}>
+                              <Bell size={10} /> Relancé le {new Date(terr.lastReminderDate).toLocaleDateString('fr-FR')}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <span style={{ color: 'var(--text-muted)' }}>—</span>
@@ -1296,6 +1396,29 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
                             style={{ padding: '0.35rem', color: '#25D366' }}
                           >
                             <MessageCircle size={16} />
+                          </button>
+                        )}
+
+                        {/* Bouton Rappel / Relance automatique (WhatsApp / SMS) si attribué */}
+                        {terr.status !== 'available' && terr.assignee && (
+                          <button
+                            type="button"
+                            onClick={() => setReminderTerritory(terr)}
+                            className="btn btn-secondary"
+                            style={{
+                              padding: '0.3rem 0.55rem',
+                              fontSize: '0.75rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              borderColor: isOverdue ? '#ef4444' : '#f59e0b',
+                              color: isOverdue ? '#f87171' : '#fbbf24',
+                              background: isOverdue ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.1)'
+                            }}
+                            title="Envoyer un rappel ou relance amicale au proclamateur (WhatsApp / SMS)"
+                          >
+                            <Bell size={13} />
+                            <span>Relancer</span>
                           </button>
                         )}
 
@@ -1709,6 +1832,20 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modale de Rappel & Relance Proclamateur (WhatsApp / SMS / Copier) */}
+      {reminderTerritory && (
+        <TerritoryReminderModal
+          territory={reminderTerritory}
+          publishers={publishers}
+          campaignName={settings.activeCampaignId ? 'Campagne spéciale' : undefined}
+          onSendReminder={(id, method) => {
+            handleRecordReminderSent(id, method);
+            setReminderTerritory(null);
+          }}
+          onClose={() => setReminderTerritory(null)}
+        />
       )}
 
     </div>
