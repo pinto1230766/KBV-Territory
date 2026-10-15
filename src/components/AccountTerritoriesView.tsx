@@ -22,7 +22,8 @@ import {
   Layers,
   Scissors,
   MessageCircle,
-  Bell
+  Bell,
+  Upload
 } from 'lucide-react';
 import type { 
   Territory, 
@@ -35,6 +36,7 @@ import type {
 } from '../types';
 import { StorageService } from '../services/storage';
 import { TerritoryReminderModal } from './TerritoryReminderModal';
+import { TerritoryHelperImportModal } from './TerritoryHelperImportModal';
 
 interface AccountTerritoriesViewProps {
   territories: Territory[];
@@ -87,6 +89,9 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
   const [isNewTerritoryModalOpen, setIsNewTerritoryModalOpen] = useState(false);
   const [batchPrintTerritories, setBatchPrintTerritories] = useState<Territory[] | null>(null);
   
+  // Modale d'importation depuis Territory Helper (KML, GeoJSON, CSV, JSON)
+  const [isImporterModalOpen, setIsImporterModalOpen] = useState(false);
+
   // Modale de rappel / relance proclamateur (WhatsApp / SMS)
   const [reminderTerritory, setReminderTerritory] = useState<Territory | null>(null);
 
@@ -510,6 +515,26 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
                 {pendingRequestsCount}
               </span>
             )}
+          </button>
+
+          {/* Bouton Importer depuis Territory Helper */}
+          <button 
+            onClick={() => setIsImporterModalOpen(true)}
+            className="btn btn-secondary"
+            title="Importer des fichiers KML, GeoJSON ou CSV provenant de Territory Helper"
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem', 
+              fontSize: '0.85rem', 
+              padding: '0.55rem 0.95rem',
+              borderColor: '#10b981',
+              background: 'rgba(16, 185, 129, 0.12)',
+              color: '#34d399'
+            }}
+          >
+            <Upload size={16} />
+            <span>Importer Territory Helper</span>
           </button>
 
           {/* Bouton Exporter */}
@@ -1845,6 +1870,14 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
             setReminderTerritory(null);
           }}
           onClose={() => setReminderTerritory(null)}
+        />
+      )}
+
+      {/* Modale d'importation de fichiers Territory Helper (KML, GeoJSON, CSV, JSON) */}
+      {isImporterModalOpen && (
+        <TerritoryHelperImportModal
+          onImportComplete={onRefreshData}
+          onClose={() => setIsImporterModalOpen(false)}
         />
       )}
 
