@@ -4,7 +4,8 @@ import {
   Navigation, 
   MapPin, 
   PenTool, 
-  Trash2
+  Trash2,
+  LocateFixed
 } from 'lucide-react';
 import type { 
   Territory, 
@@ -94,6 +95,54 @@ export const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const showToast = (msg: string) => {
     setLastActionToast(msg);
     setTimeout(() => setLastActionToast(null), 3000);
+  };
+
+  const [isLocating, setIsLocating] = useState(false);
+  const userMarkerRef = useRef<L.Marker | null>(null);
+
+  const handleLocateUser = () => {
+    if (!navigator.geolocation) {
+      showToast('⚠️ Géolocalisation non supportée par votre appareil.');
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setIsLocating(false);
+        const { latitude, longitude, accuracy } = pos.coords;
+        const latLng: [number, number] = [latitude, longitude];
+
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.flyTo(latLng, 17, { duration: 1.2 });
+
+          if (userMarkerRef.current) {
+            userMarkerRef.current.setLatLng(latLng);
+          } else {
+            const pulseIcon = L.divIcon({
+              className: 'custom-pulse-marker',
+              html: `
+                <div style="position: relative; width: 22px; height: 22px;">
+                  <div style="position: absolute; width: 22px; height: 22px; border-radius: 50%; background: #38bdf8; opacity: 0.5; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+                  <div style="position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #0284c7; border: 3px solid #ffffff; box-shadow: 0 2px 6px rgba(0,0,0,0.5);"></div>
+                </div>
+              `,
+              iconSize: [22, 22],
+              iconAnchor: [11, 11]
+            });
+            const marker = L.marker(latLng, { icon: pulseIcon }).addTo(mapInstanceRef.current);
+            marker.bindPopup(`<strong>📍 Ma position en direct</strong><br/>Précision : ~${Math.round(accuracy)} m`);
+            userMarkerRef.current = marker;
+          }
+        }
+        showToast('📍 Position GPS localisée sur la carte !');
+      },
+      (err) => {
+        setIsLocating(false);
+        console.warn('Erreur GPS :', err);
+        showToast('⚠️ Signal GPS indisponible ou permission refusée.');
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
   };
 
   // Traitement universel du clic sur la carte ou sur un polygone
@@ -785,6 +834,36 @@ export const TerritoryMap: React.FC<TerritoryMapProps> = ({
           {lastActionToast}
         </div>
       )}
+
+      {/* Bouton Géolocalisation Proclamateur Mobile & Tablette (Ma position GPS en direct) */}
+      <button
+        type="button"
+        onClick={handleLocateUser}
+        disabled={isLocating}
+        aria-label="Localiser ma position GPS"
+        className="touch-target"
+        style={{
+          position: 'absolute',
+          bottom: 24,
+          right: 16,
+          zIndex: 1000,
+          width: 48,
+          height: 48,
+          borderRadius: '50%',
+          background: 'rgba(16, 21, 34, 0.95)',
+          border: '2px solid #38bdf8',
+          color: '#38bdf8',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5)',
+          cursor: 'pointer',
+          transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+        }}
+        title="Ma position GPS en direct sur le terrain"
+      >
+        <LocateFixed size={22} className={isLocating ? 'animate-spin' : ''} />
+      </button>
 
       {/* Panneau de contrôle des calques & styles de carte */}
       <MapControlsPanel

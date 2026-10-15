@@ -513,8 +513,8 @@ export const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Navigation centrale */}
-          <nav style={{ display: 'flex', gap: '0.35rem', background: 'var(--bg-tertiary)', padding: '4px', borderRadius: '10px' }}>
+          {/* Navigation centrale (Desktop & Tablette paysage) */}
+          <nav className="desktop-nav" style={{ display: 'flex', gap: '0.35rem', background: 'var(--bg-tertiary)', padding: '4px', borderRadius: '10px' }}>
             <button
               onClick={() => {
                 setSelectedTerritory(null);
@@ -828,6 +828,65 @@ export const App: React.FC = () => {
           onClose={() => setIsDesignerOpen(false)}
         />
       )}
+
+      {/* Barre de navigation inférieure pour Smartphone & Tablette (Publisher Mobile-First Nav) */}
+      <nav className="mobile-bottom-nav">
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedTerritory(null);
+            setCurrentView('list');
+          }}
+          className={`mobile-nav-item touch-target ${currentView === 'list' && !selectedTerritory ? 'active' : ''}`}
+          title={t.territories}
+        >
+          <BookOpen size={20} />
+          <span>{t.territories}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedTerritory(null);
+            setCurrentView('map');
+          }}
+          className={`mobile-nav-item touch-target ${currentView === 'map' ? 'active' : ''}`}
+          title={t.globalMap}
+        >
+          <Compass size={20} />
+          <span>{t.globalMap}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setIsScannerOpen(true)}
+          className="mobile-nav-item touch-target"
+          title={t.scanQr}
+        >
+          <Camera size={20} />
+          <span>{t.scanQr}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setIsRequestTerritoryOpen(true)}
+          className="mobile-nav-item touch-target"
+          title={t.requestTerritory}
+        >
+          <HelpCircle size={20} />
+          <span>{t.requestTerritory}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setIsSettingsOpen(true)}
+          className="mobile-nav-item touch-target"
+          title={t.settings}
+        >
+          <Settings size={20} />
+          <span>{t.settings}</span>
+        </button>
+      </nav>
     </div>
   );
 };

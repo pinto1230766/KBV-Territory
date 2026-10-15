@@ -467,7 +467,7 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
 
       {/* Contenu principal */}
       {activeTab === 'map' ? (
-        <div className="glass-panel" style={{ height: '620px', overflow: 'hidden' }}>
+        <div className="glass-panel" style={{ height: 'clamp(380px, 60vh, 620px)', overflow: 'hidden' }}>
           <TerritoryMap 
             territories={[territory]} 
             selectedTerritory={territory} 
@@ -589,27 +589,51 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
                                 {isExpanded ? 'Masquer sonnettes ▲' : 'Voir les sonnettes ▼'}
                               </button>
                             ) : (
-                              <div style={{ display: 'flex', gap: '4px' }}>
+                              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                                 <button 
                                   onClick={() => handleStatusChange(loc.id, 'not_at_home')}
-                                  className="btn"
-                                  style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.4)' }}
+                                  className="btn touch-target"
+                                  style={{ 
+                                    padding: '0.45rem 0.8rem', 
+                                    fontSize: '0.8rem', 
+                                    fontWeight: 600,
+                                    background: loc.status === 'not_at_home' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(245, 158, 11, 0.15)', 
+                                    color: '#fbbf24', 
+                                    border: loc.status === 'not_at_home' ? '1px solid #f59e0b' : '1px solid rgba(245, 158, 11, 0.35)',
+                                    minHeight: '38px'
+                                  }}
                                   title="Marquer Absent"
                                 >
                                   Absent
                                 </button>
                                 <button 
                                   onClick={() => handleStatusChange(loc.id, 'visited')}
-                                  className="btn"
-                                  style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.4)' }}
+                                  className="btn touch-target"
+                                  style={{ 
+                                    padding: '0.45rem 0.8rem', 
+                                    fontSize: '0.8rem', 
+                                    fontWeight: 600,
+                                    background: loc.status === 'visited' ? 'rgba(16, 185, 129, 0.4)' : 'rgba(16, 185, 129, 0.15)', 
+                                    color: '#34d399', 
+                                    border: loc.status === 'visited' ? '1px solid #10b981' : '1px solid rgba(16, 185, 129, 0.35)',
+                                    minHeight: '38px'
+                                  }}
                                   title="Marquer Visité"
                                 >
                                   Visité
                                 </button>
                                 <button 
                                   onClick={() => handleStatusChange(loc.id, 'return_visit')}
-                                  className="btn"
-                                  style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', background: 'rgba(14, 165, 233, 0.2)', color: '#38bdf8', border: '1px solid rgba(14, 165, 233, 0.4)' }}
+                                  className="btn touch-target"
+                                  style={{ 
+                                    padding: '0.45rem 0.8rem', 
+                                    fontSize: '0.8rem', 
+                                    fontWeight: 600,
+                                    background: loc.status === 'return_visit' ? 'rgba(14, 165, 233, 0.4)' : 'rgba(14, 165, 233, 0.15)', 
+                                    color: '#38bdf8', 
+                                    border: loc.status === 'return_visit' ? '1px solid #0ea5e9' : '1px solid rgba(14, 165, 233, 0.35)',
+                                    minHeight: '38px'
+                                  }}
                                   title="Marquer Revisite"
                                 >
                                   Revisite
@@ -714,16 +738,19 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
                                     )}
                                   </div>
 
-                                  <div style={{ display: 'flex', gap: '3px' }}>
+                                  <div style={{ display: 'flex', gap: '5px' }}>
                                     <button 
                                       onClick={() => handleStatusChange(loc.id, 'not_at_home', unit.id)}
+                                      className="touch-target"
                                       style={{
-                                        padding: '3px 8px',
-                                        fontSize: '11px',
-                                        borderRadius: '4px',
+                                        padding: '6px 10px',
+                                        fontSize: '12px',
+                                        fontWeight: 600,
+                                        borderRadius: '6px',
                                         cursor: 'pointer',
-                                        border: unit.status === 'not_at_home' ? '1px solid #f59e0b' : '1px solid transparent',
-                                        background: unit.status === 'not_at_home' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(255,255,255,0.05)',
+                                        minHeight: '34px',
+                                        border: unit.status === 'not_at_home' ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.1)',
+                                        background: unit.status === 'not_at_home' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(255,255,255,0.06)',
                                         color: unit.status === 'not_at_home' ? '#fbbf24' : 'var(--text-secondary)'
                                       }}
                                     >
@@ -731,13 +758,16 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
                                     </button>
                                     <button 
                                       onClick={() => handleStatusChange(loc.id, 'visited', unit.id)}
+                                      className="touch-target"
                                       style={{
-                                        padding: '3px 8px',
-                                        fontSize: '11px',
-                                        borderRadius: '4px',
+                                        padding: '6px 10px',
+                                        fontSize: '12px',
+                                        fontWeight: 600,
+                                        borderRadius: '6px',
                                         cursor: 'pointer',
-                                        border: unit.status === 'visited' ? '1px solid #10b981' : '1px solid transparent',
-                                        background: unit.status === 'visited' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255,255,255,0.05)',
+                                        minHeight: '34px',
+                                        border: unit.status === 'visited' ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.1)',
+                                        background: unit.status === 'visited' ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255,255,255,0.06)',
                                         color: unit.status === 'visited' ? '#34d399' : 'var(--text-secondary)'
                                       }}
                                     >
@@ -745,13 +775,16 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
                                     </button>
                                     <button 
                                       onClick={() => handleStatusChange(loc.id, 'return_visit', unit.id)}
+                                      className="touch-target"
                                       style={{
-                                        padding: '3px 8px',
-                                        fontSize: '11px',
-                                        borderRadius: '4px',
+                                        padding: '6px 10px',
+                                        fontSize: '12px',
+                                        fontWeight: 600,
+                                        borderRadius: '6px',
                                         cursor: 'pointer',
-                                        border: unit.status === 'return_visit' ? '1px solid #0ea5e9' : '1px solid transparent',
-                                        background: unit.status === 'return_visit' ? 'rgba(14, 165, 233, 0.3)' : 'rgba(255,255,255,0.05)',
+                                        minHeight: '34px',
+                                        border: unit.status === 'return_visit' ? '1px solid #0ea5e9' : '1px solid rgba(255,255,255,0.1)',
+                                        background: unit.status === 'return_visit' ? 'rgba(14, 165, 233, 0.4)' : 'rgba(255,255,255,0.06)',
                                         color: unit.status === 'return_visit' ? '#38bdf8' : 'var(--text-secondary)'
                                       }}
                                     >
