@@ -20,7 +20,8 @@ import {
   Briefcase,
   Trees,
   Layers,
-  Scissors
+  Scissors,
+  MessageCircle
 } from 'lucide-react';
 import type { 
   Territory, 
@@ -287,7 +288,53 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
     document.body.removeChild(link);
   };
 
-  // Traiter une demande
+  // Fonction d'envoi de la confirmation d'attribution par WhatsApp
+  const sendAssignmentConfirmationWhatsApp = (terr: Territory, publisherName: string, publisherPhone?: string, dueDate?: string) => {
+    const origin = window.location.origin + window.location.pathname;
+    const directLink = `${origin}#territory=${terr.id}`;
+    const lines = [
+      `*ATTRIBUTION DE TERRITOIRE - KBV Territory*`,
+      `Bonjour ${publisherName} ! 🙏`,
+      ``,
+      `Ton territoire t'a été attribué pour la prédication :`,
+      `🗺️ *Territoire N° ${terr.number} - ${terr.label}*`,
+      `📅 *Date d'attribution :* ${new Date().toLocaleDateString('fr-FR')}`,
+      dueDate ? `⏰ *À parcourir jusqu'au :* ${new Date(dueDate).toLocaleDateString('fr-FR')}` : '',
+      ``,
+      `📱 *Lien direct pour ouvrir ton territoire :*`,
+      `${directLink}`,
+      ``,
+      `Tu pourras y noter les absents, voir le plan et annoter la carte.`,
+      `Peux-tu me confirmer quand tu as bien reçu ce message ? Merci et bonne prédication ! ✨`
+    ].filter(Boolean);
+
+    const text = encodeURIComponent(lines.join('\n'));
+    let url = `https://api.whatsapp.com/send?text=${text}`;
+    if (publisherPhone) {
+      const clean = publisherPhone.replace(/[^0-9]/g, '');
+      url = `https://api.whatsapp.com/send?phone=${clean}&text=${text}`;
+    }
+    window.open(url, '_blank');
+  };
+
+  // Bascule manuelle de l'accusé de réception par le responsable
+  const handleToggleReceiptAcknowledged = async (terr: Territory) => {
+    const newStatus = !terr.receiptAcknowledged;
+    const updated = territories.map(t => {
+      if (t.id === terr.id) {
+        return {
+          ...t,
+          receiptAcknowledged: newStatus,
+          receiptAcknowledgedDate: newStatus ? new Date().toISOString() : null
+        };
+      }
+      return t;
+    });
+    await StorageService.saveTerritories(updated);
+    onRefreshData();
+  };
+
+  // Traiter une demande avec envoi WhatsApp automatique
   const handleFulfillRequest = async (req: TerritoryRequest, territory: Territory) => {
     // 1. Assigner le territoire au demandeur
     const d = new Date();
@@ -302,17 +349,29 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
           status: 'assigned' as const,
           assignee: req.publisherName,
           dateAssigned: today,
-          dateDue: dueDate
+          dateDue: dueDate,
+          receiptAcknowledged: false,
+          receiptAcknowledgedDate: null
         };
       }
       return t;
     });
 
     await StorageService.saveTerritories(updatedTerritories);
-    await StorageService.updateTerritoryRequestStatus(req.id, 'fulfilled');
+    await StorageService.updateTerritoryRequestStatus(req.id, 'fulfilled', {
+      fulfilledTerritoryId: territory.id,
+      fulfilledDate: today
+    });
     await loadRequests();
     onRefreshData();
-    alert(`Territoire ${territory.number} attribué avec succès à ${req.publisherName} !`);
+
+    // 2. Proposer d'envoyer la confirmation via WhatsApp
+    const sendNow = confirm(
+      `✓ Territoire N° ${territory.number} attribué à ${req.publisherName} !\n\nSouhaitez-vous ouvrir WhatsApp pour lui envoyer la confirmation avec le lien direct d'accès ?`
+    );
+    if (sendNow) {
+      sendAssignmentConfirmationWhatsApp(territory, req.publisherName, req.publisherPhone, dueDate);
+    }
   };
 
   // Traiter le rejet ou l'archivage d'une demande
@@ -1053,10 +1112,54 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
                     {/* Proclamateur */}
                     <td style={{ padding: '0.85rem 1rem' }}>
                       {terr.assignee ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                           <span style={{ fontWeight: 700, color: '#fff', fontSize: '0.9rem' }}>
                             {terr.assignee}
                           </span>
+                          
+                          {/* Statut Accusé de réception */}
+                          {terr.receiptAcknowledged ? (
+                            <span 
+                              style={{ 
+                                fontSize: '0.68rem', 
+                                color: '#10b981', 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                gap: '3px', 
+                                fontWeight: 700,
+                                background: 'rgba(16, 185, 129, 0.12)',
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                width: 'fit-content'
+                              }}
+                              title={terr.receiptAcknowledgedDate ? `Confirmé le ${new Date(terr.receiptAcknowledgedDate).toLocaleDateString('fr-FR')}` : 'Réception confirmée'}
+                            >
+                              ✓ Reçu par le proclamateur
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleReceiptAcknowledged(terr)}
+                              style={{
+                                fontSize: '0.68rem',
+                                color: '#f59e0b',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                                background: 'rgba(245, 158, 11, 0.12)',
+                                border: '1px solid rgba(245, 158, 11, 0.3)',
+                                borderRadius: '4px',
+                                padding: '1px 6px',
+                                cursor: 'pointer',
+                                width: 'fit-content',
+                                textAlign: 'left'
+                              }}
+                              title="Cliquer pour marquer manuellement comme reçu"
+                            >
+                              ⏳ En attente de réception
+                            </button>
+                          )}
+
                           <button
                             onClick={() => onAssignTerritory(terr)}
                             style={{
@@ -1184,6 +1287,18 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
                           </button>
                         )}
 
+                        {/* Bouton Envoyer par WhatsApp si attribué */}
+                        {terr.status !== 'available' && terr.assignee && (
+                          <button
+                            onClick={() => sendAssignmentConfirmationWhatsApp(terr, terr.assignee!, undefined, terr.dateDue || undefined)}
+                            className="btn-icon"
+                            title="Envoyer / renvoyer le lien direct par WhatsApp au proclamateur"
+                            style={{ padding: '0.35rem', color: '#25D366' }}
+                          >
+                            <MessageCircle size={16} />
+                          </button>
+                        )}
+
                         {/* Ouvrir la fiche / Voir */}
                         <button
                           onClick={() => onOpenTerritory(terr)}
@@ -1292,13 +1407,18 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
                           gap: '0.75rem'
                         }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem' }}>
                           <div>
-                            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#fff' }}>
-                              {req.publisherName}
+                            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <span>{req.publisherName}</span>
+                              {req.publisherPhone && (
+                                <span style={{ fontSize: '0.72rem', color: '#25D366', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                  <MessageCircle size={12} /> {req.publisherPhone}
+                                </span>
+                              )}
                             </div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                              Demandé le {new Date(req.createdAt).toLocaleDateString('fr-FR')} • Type souhaité : <strong style={{ color: '#38bdf8' }}>{req.preferredType || 'Tous types'}</strong>
+                              Demandé le {new Date(req.createdAt).toLocaleDateString('fr-FR')} • Type : <strong style={{ color: '#38bdf8' }}>{req.preferredType || 'Tous types'}</strong>
                             </div>
                           </div>
 
@@ -1310,9 +1430,15 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
                             background: req.status === 'pending' ? 'rgba(245, 158, 11, 0.2)' : (req.status === 'fulfilled' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.1)'),
                             color: req.status === 'pending' ? '#fbbf24' : (req.status === 'fulfilled' ? '#34d399' : 'var(--text-muted)')
                           }}>
-                            {req.status === 'pending' ? 'En attente' : (req.status === 'fulfilled' ? 'Attribué' : 'Archivé')}
+                            {req.status === 'pending' ? '⏳ En attente' : (req.status === 'fulfilled' ? '✓ Attribué' : 'Archivé')}
                           </span>
                         </div>
+
+                        {req.requestedTerritoryNumber && (
+                          <div style={{ fontSize: '0.8rem', color: '#38bdf8', fontWeight: 700, background: 'rgba(56, 189, 248, 0.1)', padding: '0.35rem 0.65rem', borderRadius: '6px', width: 'fit-content' }}>
+                            ⭐ Territoire spécifiquement demandé : N° {req.requestedTerritoryNumber}
+                          </div>
+                        )}
 
                         {req.message && (
                           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', background: 'rgba(0,0,0,0.25)', padding: '0.6rem 0.85rem', borderRadius: '6px', fontStyle: 'italic' }}>
@@ -1322,21 +1448,31 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
 
                         {req.status === 'pending' && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Attribuer immédiatement :</span>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Attribuer & confirmer par WhatsApp :</span>
                             {availableTerritories.length === 0 ? (
                               <span style={{ fontSize: '0.8rem', color: '#ef4444' }}>Aucun territoire disponible</span>
                             ) : (
                               <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                                {availableTerritories.slice(0, 4).map(avail => (
-                                  <button
-                                    key={avail.id}
-                                    onClick={() => handleFulfillRequest(req, avail)}
-                                    className="btn btn-secondary"
-                                    style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem', borderColor: '#0284c7' }}
-                                  >
-                                    N° {avail.number} ({avail.label})
-                                  </button>
-                                ))}
+                                {availableTerritories.slice(0, 5).map(avail => {
+                                  const isExactRequested = req.requestedTerritoryId === avail.id || req.requestedTerritoryNumber === avail.number;
+                                  return (
+                                    <button
+                                      key={avail.id}
+                                      onClick={() => handleFulfillRequest(req, avail)}
+                                      className="btn btn-secondary"
+                                      style={{ 
+                                        fontSize: '0.75rem', 
+                                        padding: '0.3rem 0.65rem', 
+                                        borderColor: isExactRequested ? '#25D366' : '#0284c7',
+                                        background: isExactRequested ? 'rgba(37, 211, 102, 0.15)' : undefined,
+                                        color: isExactRequested ? '#25D366' : undefined,
+                                        fontWeight: isExactRequested ? 700 : 500
+                                      }}
+                                    >
+                                      {isExactRequested ? '⭐ ' : ''}N° {avail.number} ({avail.label}) 💬
+                                    </button>
+                                  );
+                                })}
                               </div>
                             )}
 

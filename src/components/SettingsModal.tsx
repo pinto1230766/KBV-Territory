@@ -301,6 +301,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
               </div>
 
+              {/* Coordonnées du préposé aux territoires pour WhatsApp */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
+                    Frère préposé aux territoires
+                  </label>
+                  <input 
+                    type="text" 
+                    placeholder="ex: Frère Silva"
+                    value={localSettings.territoryServantName || ''}
+                    onChange={(e) => {
+                      const updated = { ...localSettings, territoryServantName: e.target.value };
+                      setLocalSettings(updated);
+                      onUpdateSettings(updated);
+                    }}
+                    style={{ width: '100%', padding: '0.6rem 0.75rem', background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
+                    N° WhatsApp du préposé
+                  </label>
+                  <input 
+                    type="tel" 
+                    placeholder="ex: +33612345678"
+                    value={localSettings.territoryServantPhone || ''}
+                    onChange={(e) => {
+                      const updated = { ...localSettings, territoryServantPhone: e.target.value };
+                      setLocalSettings(updated);
+                      onUpdateSettings(updated);
+                    }}
+                    style={{ width: '100%', padding: '0.6rem 0.75rem', background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                  />
+                </div>
+              </div>
+
               {/* Choix de langues multilingues */}
               <div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>

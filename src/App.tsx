@@ -810,10 +810,13 @@ export const App: React.FC = () => {
       {isRequestTerritoryOpen && (
         <RequestTerritoryModal
           settings={settings}
-          onClose={() => setIsRequestTerritoryOpen(false)}
-          onRequestSubmitted={() => {
-            // Rechargement éventuel
+          territories={territories}
+          onOpenTerritory={(t) => {
+            setSelectedTerritory(t);
+            setCurrentView('list');
           }}
+          onClose={() => setIsRequestTerritoryOpen(false)}
+          onRequestSubmitted={loadAllData}
         />
       )}
 

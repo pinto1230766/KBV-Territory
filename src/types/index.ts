@@ -122,16 +122,23 @@ export interface Territory {
   rectangles?: [[number, number], [number, number]][]; // Rectangles de repérage
   circles?: { center: [number, number]; radiusMeters: number; label?: string }[]; // Cercles
   freehandDrawings?: FreehandDrawing[]; // Tracés manuscrits et croix vectorielles géolocalisées
+  receiptAcknowledged?: boolean;       // Accusé de réception confirmé par le proclamateur
+  receiptAcknowledgedDate?: string | null;
 }
 
 export interface TerritoryRequest {
   id: string;
   publisherName: string;
   publisherEmail?: string;
+  publisherPhone?: string;             // Numéro WhatsApp / Téléphone du proclamateur
   message: string;
   preferredType?: TerritoryType | 'any';
+  requestedTerritoryId?: string | null; // Territoire spécifique demandé (ex: 'terr-01')
+  requestedTerritoryNumber?: string | null;
   createdAt: string;
   status: 'pending' | 'fulfilled' | 'cancelled';
+  fulfilledTerritoryId?: string | null;
+  fulfilledDate?: string | null;
 }
 
 export interface Publisher {
@@ -182,5 +189,7 @@ export interface CongregationSettings {
   gdprCompliant: boolean; // Respect strict RGPD (France / UE)
   publisherEmail?: string;
   showMapPreview: boolean; // Aperçu / poursuite de la carte sur les fiches
+  territoryServantName?: string; // Nom du frère préposé aux territoires
+  territoryServantPhone?: string; // Téléphone WhatsApp du préposé pour les demandes
   appVersion?: string;
 }

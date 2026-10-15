@@ -17,7 +17,9 @@ import {
   Lock,
   Globe,
   Printer,
-  Navigation
+  Navigation,
+  CheckCircle2,
+  MessageCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { Territory, LocationItem, VisitStatus, FieldNote, FreehandDrawing } from '../types';
@@ -26,6 +28,7 @@ import type { StreetSortOrder } from '../utils/sorting';
 import { TerritoryMap } from './TerritoryMap';
 import { NavigationModal } from './NavigationModal';
 import { useTranslation } from '../i18n/LanguageContext';
+import { StorageService } from '../services/storage';
 
 interface TerritoryDetailProps {
   territory: Territory;
@@ -72,6 +75,27 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
   const [tempPublicNotes, setTempPublicNotes] = useState<string>('');
   const [tempPersonalNotes, setTempPersonalNotes] = useState<string>('');
   const [navigationTarget, setNavigationTarget] = useState<{ latLng: [number, number]; title: string; subtitle?: string } | null>(null);
+  const [acknowledged, setAcknowledged] = useState<boolean>(Boolean(territory.receiptAcknowledged));
+  const [acknowledgedSuccess, setAcknowledgedSuccess] = useState<boolean>(false);
+
+  const handleAcknowledgeReceipt = async () => {
+    setAcknowledged(true);
+    setAcknowledgedSuccess(true);
+    await StorageService.acknowledgeTerritoryReceipt(territory.id);
+    setTimeout(() => setAcknowledgedSuccess(false), 5000);
+  };
+
+  const handleSendThankYouWhatsApp = () => {
+    const lines = [
+      `*CONFIRMATION DE RÉCEPTION - KBV Territory*`,
+      `Bonjour mon frère ! 🙏`,
+      ``,
+      `J'ai bien reçu la carte du *Territoire N° ${territory.number} - ${territory.label}*.`,
+      `Merci beaucoup, je commence à le prêcher ! ✨`
+    ];
+    const text = encodeURIComponent(lines.join('\n'));
+    window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
+  };
 
   // Gestion du tri par rue (Ordre 1, 2, 3... / Pairs d'abord / Impairs d'abord)
   const [streetSortOrders, setStreetSortOrders] = useState<Record<string, StreetSortOrder>>({});
@@ -227,6 +251,91 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
           )}
         </div>
       </div>
+
+      {/* Bannière Accusé de réception pour le proclamateur */}
+      {territory.status !== 'available' && !acknowledged && (
+        <div style={{
+          marginBottom: '1.25rem',
+          padding: '0.85rem 1.25rem',
+          borderRadius: '12px',
+          background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.15), rgba(16, 185, 129, 0.15))',
+          border: '1px solid rgba(16, 185, 129, 0.4)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '1rem',
+          flexWrap: 'wrap'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <CheckCircle2 size={24} color="#10b981" />
+            <div>
+              <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                Nouveau territoire attribué !
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                Confirme au frère responsable que tu as bien reçu cette carte sur ton appareil.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleAcknowledgeReceipt}
+            className="btn btn-primary"
+            style={{ 
+              padding: '0.45rem 1rem', 
+              fontSize: '0.82rem', 
+              background: '#10b981', 
+              borderColor: '#10b981',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem'
+            }}
+          >
+            <CheckCircle2 size={16} />
+            <span>✓ Confirmer la bonne réception</span>
+          </button>
+        </div>
+      )}
+
+      {/* Message temporaire de confirmation avec bouton WhatsApp */}
+      {acknowledgedSuccess && (
+        <div style={{
+          marginBottom: '1.25rem',
+          padding: '0.85rem 1.25rem',
+          borderRadius: '12px',
+          background: 'rgba(16, 185, 129, 0.15)',
+          border: '1px solid #10b981',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '1rem',
+          flexWrap: 'wrap'
+        }}>
+          <div style={{ fontSize: '0.85rem', color: '#10b981', fontWeight: 700 }}>
+            ✓ Réception confirmée avec succès ! Le responsable des territoires a été informé.
+          </div>
+          <button
+            type="button"
+            onClick={handleSendThankYouWhatsApp}
+            style={{
+              padding: '0.4rem 0.85rem',
+              borderRadius: '8px',
+              background: '#25D366',
+              color: 'white',
+              border: 'none',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              cursor: 'pointer'
+            }}
+          >
+            <MessageCircle size={15} />
+            <span>Envoyer un mot par WhatsApp 💬</span>
+          </button>
+        </div>
+      )}
 
       {/* En-tête résumé du territoire */}
       <div className="glass-panel" style={{ padding: '1.75rem', marginBottom: '1.5rem', position: 'relative', overflow: 'hidden' }}>

@@ -532,10 +532,37 @@ export class StorageService {
     await localforage.setItem(REQUESTS_KEY, [req, ...requests]);
   }
 
-  static async updateTerritoryRequestStatus(id: string, status: 'pending' | 'fulfilled' | 'cancelled'): Promise<void> {
+  static async updateTerritoryRequestStatus(
+    id: string, 
+    status: 'pending' | 'fulfilled' | 'cancelled',
+    extra?: { fulfilledTerritoryId?: string; fulfilledDate?: string }
+  ): Promise<void> {
     const requests = await this.getTerritoryRequests();
-    const updated = requests.map(r => r.id === id ? { ...r, status } : r);
+    const updated = requests.map(r => r.id === id ? { 
+      ...r, 
+      status,
+      fulfilledTerritoryId: extra?.fulfilledTerritoryId !== undefined ? extra.fulfilledTerritoryId : r.fulfilledTerritoryId,
+      fulfilledDate: extra?.fulfilledDate !== undefined ? extra.fulfilledDate : r.fulfilledDate
+    } : r);
     await localforage.setItem(REQUESTS_KEY, updated);
+  }
+
+  static async acknowledgeTerritoryReceipt(territoryId: string): Promise<Territory | null> {
+    const territories = await this.getTerritories();
+    let target: Territory | null = null;
+    const updated = territories.map(t => {
+      if (t.id === territoryId) {
+        target = {
+          ...t,
+          receiptAcknowledged: true,
+          receiptAcknowledgedDate: new Date().toISOString()
+        };
+        return target;
+      }
+      return t;
+    });
+    await this.saveTerritories(updated);
+    return target;
   }
 
   static async exportData(): Promise<string> {
