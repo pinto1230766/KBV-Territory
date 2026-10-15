@@ -455,11 +455,22 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
         </div>
       </div>
 
-      {/* Cartes KPIs / Statistiques officielles */}
+      {/* Cartes KPIs / Statistiques officielles cliquables */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
         
         {/* Total */}
-        <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: '4px solid #38bdf8' }}>
+        <div 
+          className="glass-panel" 
+          onClick={() => setStatusFilter('all')}
+          style={{ 
+            padding: '1rem 1.25rem', 
+            borderLeft: '4px solid #38bdf8',
+            cursor: 'pointer',
+            background: statusFilter === 'all' ? 'rgba(56, 189, 248, 0.15)' : undefined,
+            transition: 'all 0.2s ease'
+          }}
+          title="Afficher tous les territoires"
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600 }}>
             <span>TOTAL TERRITOIRES</span>
             <Layers size={18} color="#38bdf8" />
@@ -468,12 +479,23 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
             {totalCount}
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-            Répertoire officiel actif
+            Cliquer pour tout afficher ({totalCount})
           </div>
         </div>
 
         {/* Attribués */}
-        <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: '4px solid #0284c7' }}>
+        <div 
+          className="glass-panel" 
+          onClick={() => setStatusFilter(statusFilter === 'assigned' ? 'all' : 'assigned')}
+          style={{ 
+            padding: '1rem 1.25rem', 
+            borderLeft: '4px solid #0284c7',
+            cursor: 'pointer',
+            background: statusFilter === 'assigned' ? 'rgba(2, 132, 199, 0.2)' : undefined,
+            transition: 'all 0.2s ease'
+          }}
+          title="Filtrer les territoires actuellement attribués"
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600 }}>
             <span>ATTRIBUÉS</span>
             <UserCheck size={18} color="#0284c7" />
@@ -482,12 +504,23 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
             {assignedCount} <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-muted)' }}>({percentAssigned}%)</span>
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-            En cours d'activité sur le terrain
+            Cliquer pour filtrer les attribués ({assignedCount})
           </div>
         </div>
 
         {/* Disponibles */}
-        <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: '4px solid #10b981' }}>
+        <div 
+          className="glass-panel" 
+          onClick={() => setStatusFilter(statusFilter === 'available' ? 'all' : 'available')}
+          style={{ 
+            padding: '1rem 1.25rem', 
+            borderLeft: '4px solid #10b981',
+            cursor: 'pointer',
+            background: statusFilter === 'available' ? 'rgba(16, 185, 129, 0.2)' : undefined,
+            transition: 'all 0.2s ease'
+          }}
+          title="Filtrer les territoires disponibles prêts pour distribution"
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600 }}>
             <span>DISPONIBLES</span>
             <CheckCircle2 size={18} color="#10b981" />
@@ -496,7 +529,7 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
             {availableCount}
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-            Prêts pour attribution immédiate
+            Cliquer pour filtrer les disponibles ({availableCount})
           </div>
         </div>
 
@@ -508,8 +541,10 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
             padding: '1rem 1.25rem', 
             borderLeft: '4px solid #ef4444', 
             cursor: 'pointer',
-            background: statusFilter === 'overdue' ? 'rgba(239, 68, 68, 0.15)' : undefined 
+            background: statusFilter === 'overdue' ? 'rgba(239, 68, 68, 0.2)' : undefined,
+            transition: 'all 0.2s ease'
           }}
+          title="Filtrer les territoires dépassant la règle des 4 mois"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600 }}>
             <span>EN RETARD (&gt; 4 MOIS)</span>
@@ -519,7 +554,7 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
             {overdueCount}
           </div>
           <div style={{ fontSize: '0.75rem', color: overdueCount > 0 ? '#f87171' : 'var(--text-muted)', marginTop: '0.25rem' }}>
-            {overdueCount > 0 ? 'À relancer ou restituer' : 'Tous dans les délais'}
+            {overdueCount > 0 ? 'Cliquer pour voir les retards' : 'Tous dans les délais'}
           </div>
         </div>
 
@@ -527,7 +562,13 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
         <div 
           className="glass-panel" 
           onClick={() => setIsRequestsModalOpen(true)}
-          style={{ padding: '1rem 1.25rem', borderLeft: '4px solid #a855f7', cursor: 'pointer' }}
+          style={{ 
+            padding: '1rem 1.25rem', 
+            borderLeft: '4px solid #a855f7', 
+            cursor: 'pointer',
+            transition: 'all 0.2s ease'
+          }}
+          title="Ouvrir la liste des demandes de territoires des proclamateurs"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600 }}>
             <span>DEMANDES PROCLAMATEURS</span>
@@ -537,7 +578,7 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
             {pendingRequestsCount}
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-            Reçues via l'application
+            Cliquer pour gérer les demandes
           </div>
         </div>
 
@@ -1012,24 +1053,46 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
                     {/* Proclamateur */}
                     <td style={{ padding: '0.85rem 1rem' }}>
                       {terr.assignee ? (
-                        <div style={{ fontWeight: 600, color: '#fff' }}>
-                          {terr.assignee}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                          <span style={{ fontWeight: 700, color: '#fff', fontSize: '0.9rem' }}>
+                            {terr.assignee}
+                          </span>
+                          <button
+                            onClick={() => onAssignTerritory(terr)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#38bdf8',
+                              fontSize: '0.72rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              padding: 0,
+                              textAlign: 'left',
+                              textDecoration: 'underline'
+                            }}
+                            title="Modifier l'attribution / Transférer à un autre frère"
+                          >
+                            👤 Réassigner / Transférer
+                          </button>
                         </div>
                       ) : (
                         <button
                           onClick={() => onAssignTerritory(terr)}
+                          className="btn btn-primary"
                           style={{
-                            background: 'rgba(2, 132, 199, 0.15)',
-                            color: '#38bdf8',
-                            border: '1px dashed #0284c7',
-                            padding: '0.25rem 0.6rem',
-                            borderRadius: '6px',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            cursor: 'pointer'
+                            padding: '0.35rem 0.75rem',
+                            fontSize: '0.78rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            fontWeight: 700,
+                            background: '#0284c7',
+                            borderColor: '#0284c7',
+                            boxShadow: '0 2px 8px rgba(2, 132, 199, 0.3)'
                           }}
                         >
-                          + Assigner
+                          <UserCheck size={14} />
+                          Assigner
                         </button>
                       )}
                     </td>
@@ -1043,7 +1106,7 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
                     <td style={{ padding: '0.85rem 1rem' }}>
                       {terr.dateAssigned ? (
                         <div>
-                          <div>{new Date(terr.dateAssigned).toLocaleDateString('fr-FR')}</div>
+                          <div style={{ fontWeight: 600 }}>{new Date(terr.dateAssigned).toLocaleDateString('fr-FR')}</div>
                           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                             il y a {daysAssigned} j
                           </div>
@@ -1061,7 +1124,7 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
                             {new Date(terr.dateDue).toLocaleDateString('fr-FR')}
                           </div>
                           {isOverdue && (
-                            <div style={{ fontSize: '0.7rem', color: '#f87171' }}>
+                            <div style={{ fontSize: '0.7rem', color: '#f87171', fontWeight: 700 }}>
                               dépassé de {daysOverdue} j
                             </div>
                           )}
@@ -1095,13 +1158,37 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
 
                     {/* Actions */}
                     <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.35rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.4rem', flexWrap: 'nowrap' }}>
                         
+                        {/* Bouton Assigner / Réassigner */}
+                        <button
+                          onClick={() => onAssignTerritory(terr)}
+                          className="btn btn-secondary"
+                          style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', borderColor: '#0284c7', color: '#38bdf8' }}
+                          title={terr.assignee ? "Changer l'attribution" : "Attribuer ce territoire"}
+                        >
+                          <UserCheck size={13} />
+                          <span>{terr.assignee ? 'Transférer' : 'Assigner'}</span>
+                        </button>
+
+                        {/* Bouton Restituer si attribué */}
+                        {terr.status !== 'available' && (
+                          <button
+                            onClick={() => onReturnTerritory(terr)}
+                            className="btn btn-secondary"
+                            style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', borderColor: '#f59e0b', color: '#fbbf24' }}
+                            title="Restituer le territoire et enregistrer le bilan"
+                          >
+                            <RotateCcw size={13} />
+                            <span>Restituer</span>
+                          </button>
+                        )}
+
                         {/* Ouvrir la fiche / Voir */}
                         <button
                           onClick={() => onOpenTerritory(terr)}
                           className="btn-icon"
-                          title="Ouvrir la fiche de terrain"
+                          title="Ouvrir la fiche de terrain complète"
                           style={{ padding: '0.35rem', color: 'var(--text-secondary)' }}
                         >
                           <Eye size={16} />
@@ -1116,27 +1203,6 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
                         >
                           <Printer size={16} />
                         </button>
-
-                        {/* Assigner ou Restituer */}
-                        {terr.status === 'available' ? (
-                          <button
-                            onClick={() => onAssignTerritory(terr)}
-                            className="btn-icon"
-                            title="Attribuer à un proclamateur"
-                            style={{ padding: '0.35rem', color: '#38bdf8' }}
-                          >
-                            <UserCheck size={16} />
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => onReturnTerritory(terr)}
-                            className="btn-icon"
-                            title="Restituer le territoire"
-                            style={{ padding: '0.35rem', color: '#f59e0b' }}
-                          >
-                            <RotateCcw size={16} />
-                          </button>
-                        )}
 
                         {/* Modifier les frontières */}
                         <button

@@ -7,14 +7,19 @@ import {
   MapPin, 
   Download, 
   Info,
-  ChevronRight
+  ChevronRight,
+  Undo2,
+  Check,
+  Split,
+  Combine
 } from 'lucide-react';
 import type { Territory, LocationItem, TerritoryType } from '../types';
 import { 
   type LatLngTuple, 
   calculatePolygonCenter, 
   calculatePolygonArea, 
-  splitPolygonByLine, 
+  splitPolygonByLine,
+  autoSplitPolygon,
   isPointInPolygon,
   exportCongregationToGeoJSON 
 } from '../utils/geometry';
@@ -26,7 +31,6 @@ interface TerritoryDesignerModalProps {
   onClose: () => void;
 }
 
-// Palette de couleurs distinctives pour la carte de la congrégation
 const TERRITORY_COLORS = [
   '#0284c7', // Bleu ciel
   '#10b981', // Émeraude
@@ -50,11 +54,14 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
   const [territories, setTerritories] = useState<Territory[]>(initialTerritories);
   const [locations, setLocations] = useState<LocationItem[]>(initialLocations);
   
-  // Outil actif : 'select' (éditer sommets), 'split' (découper au cutter), 'draw' (nouveau territoire)
-  const [tool, setTool] = useState<'select' | 'split' | 'draw'>('select');
+  // Outil actif
+  const [tool, setTool] = useState<'select' | 'split' | 'draw' | 'merge'>('select');
   const [selectedTerritoryId, setSelectedTerritoryId] = useState<string | null>(initialTerritories[0]?.id || null);
 
-  // État de la découpe (Cutter / Split)
+  // Pour la fusion (sélection de 2 territoires)
+  const [mergeSecondaryId, setMergeSecondaryId] = useState<string | null>(null);
+
+  // État Découpage (Cutter / Split)
   const [cutPoints, setCutPoints] = useState<LatLngTuple[]>([]);
   const [splitPreview, setSplitPreview] = useState<{
     targetTerritory: Territory;
@@ -66,7 +73,7 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
     numB: string;
   } | null>(null);
 
-  // État de dessin d'un nouveau territoire (Draw)
+  // État Tracé d'un nouveau territoire (Draw)
   const [newDrawPoints, setNewDrawPoints] = useState<LatLngTuple[]>([]);
   const [newTerritoryDetails, setNewTerritoryDetails] = useState<{
     number: string;
@@ -74,19 +81,82 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
     type: TerritoryType;
   } | null>(null);
 
-  // Statut de sauvegarde
+  // Statut
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  // Références Leaflet
+  // Références Leaflet et refs pour éviter les closures périmées
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const polygonsLayerGroupRef = useRef<L.FeatureGroup | null>(null);
   const handlesLayerGroupRef = useRef<L.FeatureGroup | null>(null);
+  const midpointsLayerGroupRef = useRef<L.FeatureGroup | null>(null);
   const cutLineLayerRef = useRef<L.Polyline | null>(null);
+  const drawLayerRef = useRef<L.Polygon | null>(null);
+
+  // Synchronisation des refs pour les gestionnaires Leaflet
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
+  const territoriesRef = useRef(territories);
+  territoriesRef.current = territories;
+  const selectedTerritoryIdRef = useRef(selectedTerritoryId);
+  selectedTerritoryIdRef.current = selectedTerritoryId;
+  const cutPointsRef = useRef(cutPoints);
+  cutPointsRef.current = cutPoints;
 
   const selectedTerritory = territories.find(t => t.id === selectedTerritoryId) || null;
+
+  // Gestionnaire universel de clic sur la carte ou sur un polygone
+  const handleMapOrPolygonClick = (clickedCoord: LatLngTuple) => {
+    const currentTool = toolRef.current;
+    const currentTerrId = selectedTerritoryIdRef.current;
+    const currentTerr = territoriesRef.current.find(t => t.id === currentTerrId);
+
+    // 1. Outil Découpage (Split)
+    if (currentTool === 'split') {
+      const prevPoints = cutPointsRef.current;
+      if (prevPoints.length === 0) {
+        setCutPoints([clickedCoord]);
+        setStatusMessage('Premier point de coupe posé. Cliquez sur le second point pour trancher !');
+      } else if (prevPoints.length === 1) {
+        const p1 = prevPoints[0];
+        const p2 = clickedCoord;
+        setCutPoints([p1, p2]);
+
+        if (currentTerr) {
+          const result = splitPolygonByLine(currentTerr.boundary, p1, p2);
+          if (result) {
+            const [polyA, polyB] = result;
+            setSplitPreview({
+              targetTerritory: currentTerr,
+              polyA,
+              polyB,
+              numA: currentTerr.number + 'A',
+              nameA: currentTerr.label + ' (Partie A)',
+              numB: currentTerr.number + 'B',
+              nameB: currentTerr.label + ' (Partie B)'
+            });
+            setStatusMessage('Découpe géométrique calculée avec succès ! Confirmez ci-dessous.');
+          } else {
+            setStatusMessage('La ligne de coupe doit traverser complètement 2 bords du territoire sélectionné. Réessayez ou utilisez la découpe automatique.');
+          }
+        }
+      } else {
+        // Redémarre un nouveau tracé de coupe
+        setCutPoints([clickedCoord]);
+        setStatusMessage('Premier point de coupe posé. Cliquez sur le second point pour trancher !');
+      }
+    }
+    // 2. Outil Nouveau Territoire (Draw)
+    else if (currentTool === 'draw') {
+      setNewDrawPoints(prev => {
+        const updated = [...prev, clickedCoord];
+        setStatusMessage(`${updated.length} point(s) posé(s). Continuez à cliquer pour délimiter le quartier.`);
+        return updated;
+      });
+    }
+  };
 
   // Initialisation de la carte Leaflet
   useEffect(() => {
@@ -99,7 +169,6 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    // Fond de carte OSM standard haute lisibilité
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
@@ -107,35 +176,20 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
 
     const polygonsGroup = L.featureGroup().addTo(map);
     const handlesGroup = L.featureGroup().addTo(map);
+    const midpointsGroup = L.featureGroup().addTo(map);
 
     polygonsLayerGroupRef.current = polygonsGroup;
     handlesLayerGroupRef.current = handlesGroup;
+    midpointsLayerGroupRef.current = midpointsGroup;
     mapInstanceRef.current = map;
 
-    // Gestion du clic sur la carte selon l'outil actif
+    // Clic sur la carte
     map.on('click', (e: L.LeafletMouseEvent) => {
-      const clickedCoord: LatLngTuple = [
+      const coord: LatLngTuple = [
         Number(e.latlng.lat.toFixed(6)),
         Number(e.latlng.lng.toFixed(6))
       ];
-
-      // Outil Découpage (Split)
-      if (tool === 'split') {
-        setCutPoints(prev => {
-          if (prev.length === 0) {
-            return [clickedCoord];
-          } else if (prev.length === 1) {
-            const line = [prev[0], clickedCoord];
-            return line;
-          } else {
-            return [clickedCoord];
-          }
-        });
-      }
-      // Outil Nouveau Territoire (Draw)
-      else if (tool === 'draw') {
-        setNewDrawPoints(prev => [...prev, clickedCoord]);
-      }
+      handleMapOrPolygonClick(coord);
     });
 
     return () => {
@@ -143,66 +197,126 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
     };
   }, []);
 
-  // Recalcul de la découpe dès qu'on a 2 points de coupe
-  useEffect(() => {
-    if (tool !== 'split' || cutPoints.length !== 2 || !selectedTerritory) return;
+  // Découpage automatique d'un polygone selon l'axe Nord-Sud ou Est-Ouest
+  const handleAutoSplit = (direction: 'horizontal' | 'vertical') => {
+    if (!selectedTerritory) return;
 
-    const result = splitPolygonByLine(selectedTerritory.boundary, cutPoints[0], cutPoints[1]);
-    if (result) {
-      const [polyA, polyB] = result;
-      setSplitPreview({
-        targetTerritory: selectedTerritory,
-        polyA,
-        polyB,
-        numA: selectedTerritory.number + 'A',
-        nameA: selectedTerritory.label + ' (Nord / Partie A)',
-        numB: selectedTerritory.number + 'B',
-        nameB: selectedTerritory.label + ' (Sud / Partie B)'
-      });
-      setStatusMessage('Découpe géométrique calculée avec succès ! Vérifiez les deux parties ci-dessous.');
-    } else {
-      setSplitPreview(null);
-      setStatusMessage('La ligne de coupe doit traverser complètement les deux côtés du territoire sélectionné.');
+    const result = autoSplitPolygon(selectedTerritory.boundary, direction);
+    if (!result) {
+      alert('Impossible de scinder automatiquement ce polygone. Vérifiez qu\'il a au moins 3 sommets bien formés.');
+      return;
     }
-  }, [cutPoints, tool, selectedTerritory]);
 
-  // Rendu des polygones et des poignées d'édition à chaque mise à jour
+    const [polyA, polyB] = result;
+    setSplitPreview({
+      targetTerritory: selectedTerritory,
+      polyA,
+      polyB,
+      numA: selectedTerritory.number + 'A',
+      nameA: selectedTerritory.label + (direction === 'horizontal' ? ' (Nord)' : ' (Ouest)'),
+      numB: selectedTerritory.number + 'B',
+      nameB: selectedTerritory.label + (direction === 'horizontal' ? ' (Sud)' : ' (Est)')
+    });
+    setStatusMessage(`Découpe automatique (${direction === 'horizontal' ? 'Nord/Sud' : 'Est/Ouest'}) calculée avec succès !`);
+  };
+
+  // Ajout d'un point au territoire sélectionné à une coordonnée ou au milieu d'un segment
+  const handleAddVertexAtPoint = (coord: LatLngTuple, insertIndex?: number) => {
+    if (!selectedTerritory) return;
+    const boundary = [...selectedTerritory.boundary];
+    if (typeof insertIndex === 'number') {
+      boundary.splice(insertIndex + 1, 0, coord);
+    } else {
+      boundary.push(coord);
+    }
+
+    const newCenter = calculatePolygonCenter(boundary);
+    setTerritories(prev => prev.map(t => {
+      if (t.id === selectedTerritory.id) {
+        return { ...t, boundary, centerCoordinates: newCenter };
+      }
+      return t;
+    }));
+    setHasUnsavedChanges(true);
+    setStatusMessage('Nouveau sommet ajouté au contour du territoire !');
+  };
+
+  // Suppression d'un sommet
+  const handleDeleteVertex = (vertexIndex: number) => {
+    if (!selectedTerritory) return;
+    if (selectedTerritory.boundary.length <= 3) {
+      alert('Un territoire doit comporter au moins 3 sommets.');
+      return;
+    }
+    const updatedBoundary = selectedTerritory.boundary.filter((_, idx) => idx !== vertexIndex);
+    const newCenter = calculatePolygonCenter(updatedBoundary);
+
+    setTerritories(prev => prev.map(t => {
+      if (t.id === selectedTerritory.id) {
+        return { ...t, boundary: updatedBoundary, centerCoordinates: newCenter };
+      }
+      return t;
+    }));
+    setHasUnsavedChanges(true);
+    setStatusMessage('Sommet supprimé avec succès.');
+  };
+
+  // Rendu interactif des polygones, sommets et outils sur la carte
   useEffect(() => {
     const map = mapInstanceRef.current;
     const polygonsGroup = polygonsLayerGroupRef.current;
     const handlesGroup = handlesLayerGroupRef.current;
-    if (!map || !polygonsGroup || !handlesGroup) return;
+    const midpointsGroup = midpointsLayerGroupRef.current;
+    if (!map || !polygonsGroup || !handlesGroup || !midpointsGroup) return;
 
     polygonsGroup.clearLayers();
     handlesGroup.clearLayers();
+    midpointsGroup.clearLayers();
 
-    // Nettoyage de la ligne de coupe
     if (cutLineLayerRef.current) {
       map.removeLayer(cutLineLayerRef.current);
       cutLineLayerRef.current = null;
     }
+    if (drawLayerRef.current) {
+      map.removeLayer(drawLayerRef.current);
+      drawLayerRef.current = null;
+    }
 
-    // 1. Dessiner tous les territoires de la congrégation
+    // 1. Rendu de tous les territoires existants
     territories.forEach((t, index) => {
       const isSelected = t.id === selectedTerritoryId;
+      const isMergeSecondary = t.id === mergeSecondaryId;
       const color = TERRITORY_COLORS[index % TERRITORY_COLORS.length];
 
-      // Polygone du territoire
+      // En mode split ou draw, on laisse les clics traverser vers la carte
+      const isDrawingOrSplitting = tool === 'split' || tool === 'draw';
+
       const polygon = L.polygon(t.boundary, {
-        color: isSelected ? '#38bdf8' : color,
-        weight: isSelected ? 3.5 : 2,
-        fillColor: color,
-        fillOpacity: isSelected ? 0.35 : 0.18,
-        dashArray: isSelected ? undefined : '4, 4'
+        color: isSelected ? '#38bdf8' : (isMergeSecondary ? '#f59e0b' : color),
+        weight: isSelected ? 3.5 : (isMergeSecondary ? 3 : 2),
+        fillColor: isMergeSecondary ? '#f59e0b' : color,
+        fillOpacity: isSelected ? 0.35 : (isMergeSecondary ? 0.4 : 0.18),
+        dashArray: isSelected ? undefined : '4, 4',
+        interactive: true
       }).addTo(polygonsGroup);
 
-      // Clic sur le polygone pour le sélectionner
-      polygon.on('click', (e) => {
-        L.DomEvent.stopPropagation(e);
-        setSelectedTerritoryId(t.id);
-        if (tool === 'split') {
-          setCutPoints([]);
-          setSplitPreview(null);
+      // Clic sur le polygone
+      polygon.on('click', (e: L.LeafletMouseEvent) => {
+        const clickedCoord: LatLngTuple = [
+          Number(e.latlng.lat.toFixed(6)),
+          Number(e.latlng.lng.toFixed(6))
+        ];
+
+        if (isDrawingOrSplitting) {
+          handleMapOrPolygonClick(clickedCoord);
+        } else if (tool === 'merge') {
+          if (!selectedTerritoryId) {
+            setSelectedTerritoryId(t.id);
+          } else if (selectedTerritoryId !== t.id) {
+            setMergeSecondaryId(t.id);
+          }
+        } else {
+          setSelectedTerritoryId(t.id);
         }
       });
 
@@ -233,18 +347,20 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
         iconAnchor: [25, 12]
       });
 
-      const marker = L.marker(center, { icon, interactive: true }).addTo(polygonsGroup);
-      marker.on('click', (e) => {
-        L.DomEvent.stopPropagation(e);
-        setSelectedTerritoryId(t.id);
+      const marker = L.marker(center, { icon, interactive: !isDrawingOrSplitting }).addTo(polygonsGroup);
+      marker.on('click', () => {
+        if (!isDrawingOrSplitting) {
+          setSelectedTerritoryId(t.id);
+        }
       });
     });
 
-    // 2. Si un territoire est sélectionné et en mode 'select', afficher les poignées éditables
+    // 2. Poignées de sommets et boutons "+" d'insertion (Mode 'select')
     if (selectedTerritory && tool === 'select') {
       selectedTerritory.boundary.forEach((coord, ptIdx) => {
+        // Poignée bleue déplaçable
         const handleMarker = L.circleMarker(coord, {
-          radius: 6,
+          radius: 7,
           color: '#ffffff',
           weight: 2,
           fillColor: '#0284c7',
@@ -252,13 +368,12 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
           interactive: true
         }).addTo(handlesGroup);
 
-        // Curseur de déplacement
         const element = handleMarker.getElement() as HTMLElement | null;
         if (element) {
-          element.style.cursor = 'move';
+          element.style.cursor = 'grab';
         }
 
-        // Déplacement par drag simulé
+        // Drag & drop du sommet
         let isDragging = false;
         handleMarker.on('mousedown', (e) => {
           L.DomEvent.stopPropagation(e);
@@ -273,7 +388,6 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
             ];
             handleMarker.setLatLng(newPos);
 
-            // Mise à jour en direct du polygone
             setTerritories(prev => prev.map(t => {
               if (t.id === selectedTerritory.id) {
                 const newBoundary = [...t.boundary];
@@ -300,42 +414,51 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
           map.on('mouseup', onMouseUp);
         });
 
-        // Clic droit pour supprimer le sommet (minimum 3 sommets)
+        // Clic pour supprimer le sommet
         handleMarker.on('contextmenu', (e) => {
           L.DomEvent.stopPropagation(e);
-          if (selectedTerritory.boundary.length <= 3) {
-            alert('Un territoire doit comporter au moins 3 sommets.');
-            return;
-          }
-          const updatedBoundary = selectedTerritory.boundary.filter((_, idx) => idx !== ptIdx);
-          setTerritories(prev => prev.map(t => {
-            if (t.id === selectedTerritory.id) {
-              return {
-                ...t,
-                boundary: updatedBoundary,
-                centerCoordinates: calculatePolygonCenter(updatedBoundary)
-              };
-            }
-            return t;
-          }));
-          setHasUnsavedChanges(true);
+          handleDeleteVertex(ptIdx);
+        });
+
+        // Petit point '+' au milieu de chaque segment pour insérer un nouveau point en 1 clic
+        const nextCoord = selectedTerritory.boundary[(ptIdx + 1) % selectedTerritory.boundary.length];
+        const midPoint: LatLngTuple = [
+          Number(((coord[0] + nextCoord[0]) / 2).toFixed(6)),
+          Number(((coord[1] + nextCoord[1]) / 2).toFixed(6))
+        ];
+
+        const plusMarker = L.circleMarker(midPoint, {
+          radius: 4,
+          color: '#ffffff',
+          weight: 1.5,
+          fillColor: '#f59e0b',
+          fillOpacity: 0.9,
+          interactive: true
+        }).addTo(midpointsGroup);
+
+        plusMarker.bindTooltip('Cliquer pour insérer un sommet ici', { direction: 'top', offset: [0, -5] });
+        plusMarker.on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
+          handleAddVertexAtPoint(midPoint, ptIdx);
         });
       });
     }
 
-    // 3. Dessiner la ligne de coupe si en mode 'split'
+    // 3. Dessin des points de coupe (Mode 'split')
     if (cutPoints.length > 0) {
-      cutPoints.forEach(pt => {
-        L.circleMarker(pt, {
-          radius: 7,
-          color: '#ef4444',
-          fillColor: '#ffffff',
+      cutPoints.forEach((pt, idx) => {
+        const marker = L.circleMarker(pt, {
+          radius: 9,
+          color: '#ffffff',
+          fillColor: '#ef4444',
           fillOpacity: 1,
           weight: 3
         }).addTo(handlesGroup);
+
+        marker.bindTooltip(`Point de coupe ${idx + 1}`, { permanent: true, direction: 'top', offset: [0, -10] });
       });
 
-      if (cutPoints.length === 2) {
+      if (cutPoints.length >= 2) {
         cutLineLayerRef.current = L.polyline(cutPoints, {
           color: '#ef4444',
           weight: 4,
@@ -344,28 +467,32 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
       }
     }
 
-    // 4. Dessiner le polygone en cours de création en mode 'draw'
+    // 4. Tracé d'un nouveau quartier (Mode 'draw')
     if (newDrawPoints.length > 0) {
-      newDrawPoints.forEach(pt => {
-        L.circleMarker(pt, {
-          radius: 5,
-          color: '#10b981',
-          fillColor: '#ffffff',
+      newDrawPoints.forEach((pt, idx) => {
+        const marker = L.circleMarker(pt, {
+          radius: 6,
+          color: '#ffffff',
+          fillColor: '#10b981',
           fillOpacity: 1,
           weight: 2
         }).addTo(handlesGroup);
+
+        marker.bindTooltip(`${idx + 1}`, { permanent: true, direction: 'top', offset: [0, -8] });
       });
 
       if (newDrawPoints.length >= 2) {
-        L.polyline(newDrawPoints, {
+        drawLayerRef.current = L.polygon(newDrawPoints, {
           color: '#10b981',
           weight: 3,
+          fillColor: '#10b981',
+          fillOpacity: 0.25,
           dashArray: '4, 4'
-        }).addTo(handlesGroup);
+        }).addTo(map);
       }
     }
 
-  }, [territories, selectedTerritoryId, tool, cutPoints, newDrawPoints]);
+  }, [territories, selectedTerritoryId, mergeSecondaryId, tool, cutPoints, newDrawPoints]);
 
   // Validation de la découpe (Split)
   const handleApplySplit = () => {
@@ -373,23 +500,21 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
 
     const { polyA, polyB, numA, nameA, numB, nameB } = splitPreview;
 
-    // 1. Créer le Territoire A
     const territoryA: Territory = {
       ...selectedTerritory,
       id: 'terr-' + Date.now().toString(36) + '-a',
       number: numA.trim() || selectedTerritory.number + 'A',
-      label: nameA.trim() || selectedTerritory.label + ' - Partie A',
+      label: nameA.trim() || selectedTerritory.label + ' (Partie A)',
       boundary: polyA,
       centerCoordinates: calculatePolygonCenter(polyA),
       shortUrlCode: 'LYON' + numA.trim().toUpperCase()
     };
 
-    // 2. Créer le Territoire B
     const territoryB: Territory = {
       ...selectedTerritory,
       id: 'terr-' + (Date.now() + 1).toString(36) + '-b',
       number: numB.trim() || selectedTerritory.number + 'B',
-      label: nameB.trim() || selectedTerritory.label + ' - Partie B',
+      label: nameB.trim() || selectedTerritory.label + ' (Partie B)',
       boundary: polyB,
       centerCoordinates: calculatePolygonCenter(polyB),
       shortUrlCode: 'LYON' + numB.trim().toUpperCase(),
@@ -399,7 +524,7 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
       dateDue: null
     };
 
-    // 3. Répartir les adresses de l'ancien territoire vers A ou B
+    // Répartition des adresses
     const updatedLocs = locations.map(loc => {
       if (loc.territoryId === selectedTerritory.id) {
         const inA = isPointInPolygon(loc.latLng, polyA);
@@ -411,7 +536,6 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
       return loc;
     });
 
-    // 4. Remplacer l'ancien territoire par A et B
     const updatedTerrs = territories.filter(t => t.id !== selectedTerritory.id);
     updatedTerrs.push(territoryA, territoryB);
 
@@ -422,16 +546,15 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
     setSplitPreview(null);
     setTool('select');
     setHasUnsavedChanges(true);
-    setStatusMessage(`Territoire ${selectedTerritory.number} scindé avec succès en ${territoryA.number} et ${territoryB.number} !`);
+    setStatusMessage(`Territoire ${selectedTerritory.number} scindé en ${territoryA.number} et ${territoryB.number} avec succès !`);
   };
 
-  // Validation de la création d'un nouveau territoire (Draw)
+  // Validation de la création d'un nouveau territoire tracé (Draw)
   const handleFinishDraw = () => {
     if (newDrawPoints.length < 3) {
       alert('Un polygone doit comporter au moins 3 points.');
       return;
     }
-    // Proposer le numéro suivant
     const maxNum = territories.reduce((max, t) => Math.max(max, parseInt(t.number, 10) || 0), 0);
     const nextNum = String(maxNum + 1).padStart(2, '0');
 
@@ -469,13 +592,53 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
     setStatusMessage(`Nouveau Territoire ${newTerritory.number} créé avec succès !`);
   };
 
+  // Fusion de 2 territoires (Merge)
+  const handleApplyMerge = () => {
+    if (!selectedTerritoryId || !mergeSecondaryId) return;
+    const t1 = territories.find(t => t.id === selectedTerritoryId);
+    const t2 = territories.find(t => t.id === mergeSecondaryId);
+    if (!t1 || !t2) return;
+
+    // Fusion des sommets
+    const combinedBoundary = [...t1.boundary, ...t2.boundary];
+    const newCenter = calculatePolygonCenter(combinedBoundary);
+
+    const mergedTerritory: Territory = {
+      ...t1,
+      id: 'terr-' + Date.now().toString(36) + '-merged',
+      number: t1.number,
+      label: `${t1.label} + ${t2.label}`,
+      boundary: combinedBoundary,
+      centerCoordinates: newCenter
+    };
+
+    // Transférer les adresses du second vers le fusionné
+    const updatedLocs = locations.map(loc => {
+      if (loc.territoryId === t2.id) {
+        return { ...loc, territoryId: mergedTerritory.id };
+      }
+      return loc;
+    });
+
+    const updatedTerrs = territories.filter(t => t.id !== t1.id && t.id !== t2.id);
+    updatedTerrs.push(mergedTerritory);
+
+    setTerritories(updatedTerrs);
+    setLocations(updatedLocs);
+    setSelectedTerritoryId(mergedTerritory.id);
+    setMergeSecondaryId(null);
+    setTool('select');
+    setHasUnsavedChanges(true);
+    setStatusMessage(`Territoires ${t1.number} et ${t2.number} fusionnés avec succès !`);
+  };
+
   // Sauvegarde globale
   const handleSaveAll = async () => {
     try {
       setIsSaving(true);
       await onSaveTerritories(territories, locations);
       setHasUnsavedChanges(false);
-      setStatusMessage('Tous les contours et découpages ont été enregistrés !');
+      setStatusMessage('Tous les contours, découpages et adresses ont été enregistrés avec succès !');
     } catch (e) {
       alert('Erreur lors de la sauvegarde : ' + e);
     } finally {
@@ -495,7 +658,7 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  // Surface calculée du territoire sélectionné
+  // Surface calculée
   const currentArea = selectedTerritory ? calculatePolygonArea(selectedTerritory.boundary) : 0;
   const currentAreaFormatted = currentArea > 10000 
     ? `${(currentArea / 10000).toFixed(2)} ha` 
@@ -514,7 +677,7 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
       flexDirection: 'column'
     }}>
       
-      {/* Barre d'outils supérieure de l'Atelier */}
+      {/* Barre d'outils supérieure */}
       <header style={{
         background: 'rgba(16, 21, 34, 0.95)',
         backdropFilter: 'blur(12px)',
@@ -542,7 +705,7 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
           </div>
           <div>
             <h2 style={{ fontSize: '1.05rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              Atelier de Découpage des Territoires (Designer)
+              Atelier de Découpage des Territoires
             </h2>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
               Découpe au cutter, ajustement des frontières et dessin de la congrégation
@@ -558,18 +721,22 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
               setCutPoints([]);
               setSplitPreview(null);
               setNewDrawPoints([]);
+              setMergeSecondaryId(null);
             }}
             className={`btn ${tool === 'select' ? 'btn-primary' : 'btn-ghost'}`}
             style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
           >
             <MapPin size={15} />
-            <span>Ajuster les sommets</span>
+            <span>Ajuster sommets</span>
           </button>
 
           <button
             onClick={() => {
               setTool('split');
               setNewDrawPoints([]);
+              setMergeSecondaryId(null);
+              setCutPoints([]);
+              setStatusMessage('Mode Cutter activé : Cliquez sur 2 points de la carte pour trancher le territoire sélectionné.');
             }}
             className={`btn ${tool === 'split' ? 'btn-primary' : 'btn-ghost'}`}
             style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.35rem', background: tool === 'split' ? '#ef4444' : undefined }}
@@ -583,12 +750,29 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
               setTool('draw');
               setCutPoints([]);
               setSplitPreview(null);
+              setMergeSecondaryId(null);
+              setStatusMessage('Mode Tracé activé : Cliquez sur la carte pour délimiter les contours d\'un nouveau territoire.');
             }}
             className={`btn ${tool === 'draw' ? 'btn-primary' : 'btn-ghost'}`}
             style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.35rem', background: tool === 'draw' ? '#10b981' : undefined }}
           >
             <Plus size={15} />
             <span>➕ Tracer Nouveau</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setTool('merge');
+              setCutPoints([]);
+              setSplitPreview(null);
+              setNewDrawPoints([]);
+              setStatusMessage('Mode Fusion : Sélectionnez deux territoires pour les réunir en un seul.');
+            }}
+            className={`btn ${tool === 'merge' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.35rem', background: tool === 'merge' ? '#f59e0b' : undefined }}
+          >
+            <Combine size={15} />
+            <span>🔗 Fusionner</span>
           </button>
         </div>
 
@@ -637,12 +821,12 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
         </div>
       </header>
 
-      {/* Contenu principal : Panneau latéral gauche + Carte interactive */}
+      {/* Contenu : Panneau latéral + Carte */}
       <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden' }}>
         
-        {/* Panneau latéral gauche (Territoires & Guide d'action) */}
+        {/* Panneau latéral gauche */}
         <div style={{
-          width: '320px',
+          width: '340px',
           background: 'rgba(15, 23, 42, 0.95)',
           borderRight: '1px solid var(--border-subtle)',
           display: 'flex',
@@ -651,72 +835,158 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
           overflowY: 'auto'
         }}>
           
-          {/* Guide d'instruction selon l'outil */}
+          {/* Guide d'instruction interactif */}
           <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-subtle)', background: 'rgba(2, 132, 199, 0.08)' }}>
+            
             {tool === 'select' && (
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                <strong style={{ color: '#38bdf8', display: 'block', marginBottom: '0.25rem' }}>👉 Mode Ajustement :</strong>
-                Glissez les ronds bleus pour ajuster les frontières sur les rues. Clic droit pour supprimer un point.
-              </div>
-            )}
-
-            {tool === 'split' && (
-              <div style={{ fontSize: '0.8rem', color: '#f87171' }}>
-                <strong style={{ display: 'block', marginBottom: '0.25rem' }}>✂️ Mode Découpage :</strong>
-                1. Cliquez sur le territoire à couper.<br/>
-                2. Cliquez sur 2 points de la carte pour faire passer la ligne de refente à travers la zone.
-              </div>
-            )}
-
-            {tool === 'draw' && (
-              <div style={{ fontSize: '0.8rem', color: '#34d399' }}>
-                <strong style={{ display: 'block', marginBottom: '0.25rem' }}>➕ Nouveau Territoire :</strong>
-                Cliquez successivement sur la carte pour tracer le contour du polygone ({newDrawPoints.length} points posés).
-                {newDrawPoints.length >= 3 && (
+              <div>
+                <strong style={{ color: '#38bdf8', fontSize: '0.82rem', display: 'block', marginBottom: '0.35rem' }}>
+                  👉 Ajustement des Sommets :
+                </strong>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0 0 0.5rem 0' }}>
+                  • Glissez les <strong>ronds bleus</strong> pour ajuster les rues.<br/>
+                  • Cliquez sur les petits <strong>points jaunes (+)</strong> pour insérer un sommet.<br/>
+                  • Clic droit sur un point bleu pour le supprimer.
+                </p>
+                {selectedTerritory && (
                   <button
-                    onClick={handleFinishDraw}
-                    className="btn btn-primary"
-                    style={{ width: '100%', marginTop: '0.5rem', fontSize: '0.75rem', padding: '0.4rem' }}
+                    onClick={() => {
+                      if (!selectedTerritory.boundary[0]) return;
+                      const p = selectedTerritory.boundary[0];
+                      const newPt: LatLngTuple = [p[0] + 0.0005, p[1] + 0.0005];
+                      handleAddVertexAtPoint(newPt);
+                    }}
+                    className="btn btn-secondary"
+                    style={{ width: '100%', fontSize: '0.75rem', padding: '0.35rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
                   >
-                    Valider le contour ({newDrawPoints.length} sommets)
+                    <Plus size={14} />
+                    <span>Ajouter un sommet GPS libre</span>
                   </button>
                 )}
               </div>
             )}
+
+            {tool === 'split' && (
+              <div>
+                <strong style={{ color: '#ef4444', fontSize: '0.82rem', display: 'block', marginBottom: '0.35rem' }}>
+                  ✂️ Découpage au Cutter :
+                </strong>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0 0 0.65rem 0' }}>
+                  {cutPoints.length === 0 && '1. Cliquez sur la carte pour poser le premier point de la ligne de refente.'}
+                  {cutPoints.length === 1 && '2. Cliquez de l\'autre côté du territoire pour trancher !'}
+                  {cutPoints.length >= 2 && 'Ligne de coupe tracée !'}
+                </p>
+
+                {/* Boutons de découpe automatique ultra faciles */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem', background: 'rgba(0,0,0,0.2)', padding: '0.5rem', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>DÉCOUPE AUTOMATIQUE EN 1 CLIC :</span>
+                  <button
+                    onClick={() => handleAutoSplit('horizontal')}
+                    className="btn btn-secondary"
+                    style={{ fontSize: '0.75rem', padding: '0.35rem', borderColor: '#ef4444', color: '#f87171', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
+                  >
+                    <Split size={14} />
+                    <span>Scinder en 2 (Axe Nord / Sud)</span>
+                  </button>
+                  <button
+                    onClick={() => handleAutoSplit('vertical')}
+                    className="btn btn-secondary"
+                    style={{ fontSize: '0.75rem', padding: '0.35rem', borderColor: '#ef4444', color: '#f87171', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
+                  >
+                    <Split size={14} />
+                    <span>Scinder en 2 (Axe Est / Ouest)</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {tool === 'draw' && (
+              <div>
+                <strong style={{ color: '#10b981', fontSize: '0.82rem', display: 'block', marginBottom: '0.35rem' }}>
+                  ➕ Tracer un Nouveau Quartier :
+                </strong>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0 0 0.5rem 0' }}>
+                  Cliquez successivement sur la carte pour délimiter le quartier ({newDrawPoints.length} points posés).
+                </p>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  {newDrawPoints.length > 0 && (
+                    <button
+                      onClick={() => setNewDrawPoints(prev => prev.slice(0, -1))}
+                      className="btn btn-secondary"
+                      style={{ flex: 1, fontSize: '0.75rem', padding: '0.35rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem' }}
+                    >
+                      <Undo2 size={13} />
+                      <span>Annuler point</span>
+                    </button>
+                  )}
+                  {newDrawPoints.length >= 3 && (
+                    <button
+                      onClick={handleFinishDraw}
+                      className="btn btn-primary"
+                      style={{ flex: 1.5, fontSize: '0.75rem', padding: '0.35rem', background: '#10b981', borderColor: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem' }}
+                    >
+                      <Check size={14} />
+                      <span>Terminer le contour</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {tool === 'merge' && (
+              <div>
+                <strong style={{ color: '#f59e0b', fontSize: '0.82rem', display: 'block', marginBottom: '0.35rem' }}>
+                  🔗 Fusionner deux Territoires :
+                </strong>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0 0 0.5rem 0' }}>
+                  Cliquez sur le premier territoire puis sur le second pour les réunir.
+                </p>
+                {selectedTerritoryId && mergeSecondaryId && (
+                  <button
+                    onClick={handleApplyMerge}
+                    className="btn btn-primary"
+                    style={{ width: '100%', fontSize: '0.75rem', padding: '0.35rem', background: '#f59e0b', borderColor: '#f59e0b' }}
+                  >
+                    Valider la fusion ({territories.find(t => t.id === selectedTerritoryId)?.number} + {territories.find(t => t.id === mergeSecondaryId)?.number})
+                  </button>
+                )}
+              </div>
+            )}
+
           </div>
 
-          {/* Statut ou message d'info */}
+          {/* Message de notification / statut */}
           {statusMessage && (
-            <div style={{ padding: '0.75rem 1rem', background: 'rgba(0,0,0,0.3)', borderBottom: '1px solid var(--border-subtle)', fontSize: '0.75rem', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <div style={{ padding: '0.65rem 0.85rem', background: 'rgba(0,0,0,0.3)', borderBottom: '1px solid var(--border-subtle)', fontSize: '0.75rem', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <Info size={14} style={{ flexShrink: 0 }} />
               <span>{statusMessage}</span>
             </div>
           )}
 
-          {/* Fiche d'information du territoire sélectionné */}
+          {/* Fiche Territoire sélectionné */}
           {selectedTerritory && (
-            <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-subtle)' }}>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
+            <div style={{ padding: '0.85rem 1rem', borderBottom: '1px solid var(--border-subtle)' }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
                 Territoire Actif
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
-                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.2rem' }}>
+                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>
                   N° {selectedTerritory.number}
                 </div>
-                <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'rgba(2, 132, 199, 0.2)', color: '#38bdf8', fontWeight: 600 }}>
+                <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'rgba(2, 132, 199, 0.2)', color: '#38bdf8', fontWeight: 600 }}>
                   {selectedTerritory.type}
                 </span>
               </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
                 {selectedTerritory.label}
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.75rem', fontSize: '0.75rem' }}>
-                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.4rem', borderRadius: '6px' }}>
-                  <span style={{ color: 'var(--text-muted)', display: 'block' }}>Surface estimée :</span>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.65rem', fontSize: '0.75rem' }}>
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.35rem', borderRadius: '6px' }}>
+                  <span style={{ color: 'var(--text-muted)', display: 'block' }}>Surface :</span>
                   <strong style={{ color: '#fff' }}>{currentAreaFormatted}</strong>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.4rem', borderRadius: '6px' }}>
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.35rem', borderRadius: '6px' }}>
                   <span style={{ color: 'var(--text-muted)', display: 'block' }}>Sommets :</span>
                   <strong style={{ color: '#fff' }}>{selectedTerritory.boundary.length} points</strong>
                 </div>
@@ -724,31 +994,36 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
             </div>
           )}
 
-          {/* Liste de tous les territoires pour sélection rapide */}
+          {/* Liste de tous les territoires */}
           <div style={{ flex: 1, padding: '0.75rem', overflowY: 'auto' }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.5rem', paddingLeft: '0.25rem' }}>
+            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.45rem', paddingLeft: '0.25rem' }}>
               TERRITOIRES DE LA CONGRÉGATION ({territories.length})
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
               {territories.map((t, idx) => {
                 const isSel = t.id === selectedTerritoryId;
+                const isMergeSec = t.id === mergeSecondaryId;
                 const col = TERRITORY_COLORS[idx % TERRITORY_COLORS.length];
 
                 return (
                   <div
                     key={t.id}
                     onClick={() => {
-                      setSelectedTerritoryId(t.id);
-                      if (mapInstanceRef.current && t.centerCoordinates) {
-                        mapInstanceRef.current.panTo(t.centerCoordinates);
+                      if (tool === 'merge' && selectedTerritoryId && selectedTerritoryId !== t.id) {
+                        setMergeSecondaryId(t.id);
+                      } else {
+                        setSelectedTerritoryId(t.id);
+                        if (mapInstanceRef.current && t.centerCoordinates) {
+                          mapInstanceRef.current.panTo(t.centerCoordinates);
+                        }
                       }
                     }}
                     style={{
-                      padding: '0.55rem 0.75rem',
+                      padding: '0.5rem 0.75rem',
                       borderRadius: '8px',
-                      background: isSel ? 'rgba(2, 132, 199, 0.2)' : 'rgba(255, 255, 255, 0.02)',
-                      border: `1px solid ${isSel ? '#0284c7' : 'rgba(255, 255, 255, 0.06)'}`,
+                      background: isSel ? 'rgba(2, 132, 199, 0.2)' : (isMergeSec ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255, 255, 255, 0.02)'),
+                      border: `1px solid ${isSel ? '#0284c7' : (isMergeSec ? '#f59e0b' : 'rgba(255, 255, 255, 0.06)')}`,
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
@@ -779,7 +1054,7 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
 
       </div>
 
-      {/* MODALE : Validation de la Découpe (Split Confirmation) */}
+      {/* MODALE : Validation de la Découpe */}
       {splitPreview && (
         <div style={{
           position: 'fixed',
@@ -872,7 +1147,7 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
         </div>
       )}
 
-      {/* MODALE : Nommer le nouveau territoire tracé (Draw Completion) */}
+      {/* MODALE : Nommer le nouveau territoire tracé */}
       {newTerritoryDetails && (
         <div style={{
           position: 'fixed',

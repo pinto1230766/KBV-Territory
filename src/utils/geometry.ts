@@ -175,6 +175,43 @@ export function splitPolygonByLine(
   return null;
 }
 
+// Découpe automatique d'un polygone selon l'axe médian (horizontal ou vertical)
+export function autoSplitPolygon(
+  polygon: LatLngTuple[],
+  direction: 'horizontal' | 'vertical' = 'horizontal'
+): [LatLngTuple[], LatLngTuple[]] | null {
+  if (polygon.length < 3) return null;
+
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+
+  for (const [lat, lng] of polygon) {
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
+  }
+
+  const midLat = (minLat + maxLat) / 2;
+  const midLng = (minLng + maxLng) / 2;
+  const spanLat = maxLat - minLat;
+  const spanLng = maxLng - minLng;
+
+  if (direction === 'horizontal') {
+    // Coupe horizontale (Est - Ouest) : sépare Nord et Sud
+    const cutStart: LatLngTuple = [midLat, minLng - spanLng];
+    const cutEnd: LatLngTuple = [midLat, maxLng + spanLng];
+    return splitPolygonByLine(polygon, cutStart, cutEnd);
+  } else {
+    // Coupe verticale (Nord - Sud) : sépare Ouest et Est
+    const cutStart: LatLngTuple = [minLat - spanLat, midLng];
+    const cutEnd: LatLngTuple = [maxLat + spanLat, midLng];
+    return splitPolygonByLine(polygon, cutStart, cutEnd);
+  }
+}
+
 // Convertisseur GeoJSON pour export officiel
 export function exportCongregationToGeoJSON(territories: { id: string; number: string; label: string; type: string; boundary: LatLngTuple[] }[]) {
   const features = territories.map(t => {
