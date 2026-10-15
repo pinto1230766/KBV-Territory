@@ -19,7 +19,8 @@ import {
   Home,
   Briefcase,
   Trees,
-  Layers
+  Layers,
+  Scissors
 } from 'lucide-react';
 import type { 
   Territory, 
@@ -45,6 +46,7 @@ interface AccountTerritoriesViewProps {
   onPrintTerritory: (territory: Territory) => void;
   onRefreshData: () => void;
   onSwitchToPublisherView: () => void;
+  onOpenDesigner?: () => void;
 }
 
 export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
@@ -59,7 +61,8 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
   onEditBoundary,
   onPrintTerritory,
   onRefreshData,
-  onSwitchToPublisherView
+  onSwitchToPublisherView,
+  onOpenDesigner
 }) => {
   // Filtres
   const [searchQuery, setSearchQuery] = useState('');
@@ -417,6 +420,28 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
             <Download size={16} />
             <span>Exporter CSV</span>
           </button>
+
+          {/* Bouton Atelier de Découpage (Designer) */}
+          {onOpenDesigner && (
+            <button 
+              onClick={onOpenDesigner}
+              className="btn btn-secondary"
+              title="Ouvrir l'Atelier cartographique de découpe et d'ajustement des territoires"
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.5rem', 
+                fontSize: '0.85rem', 
+                padding: '0.55rem 0.95rem',
+                borderColor: '#0284c7',
+                background: 'rgba(2, 132, 199, 0.15)',
+                color: '#38bdf8'
+              }}
+            >
+              <Scissors size={16} />
+              <span>✂️ Atelier Découpe</span>
+            </button>
+          )}
 
           {/* Bouton Nouveau Territoire */}
           <button 

@@ -35,6 +35,7 @@ import { AnnotationCanvasModal } from './components/AnnotationCanvasModal';
 import { PrintTerritoryModal } from './components/PrintTerritoryModal';
 import { RequestTerritoryModal } from './components/RequestTerritoryModal';
 import { AccountTerritoriesView } from './components/AccountTerritoriesView';
+import { TerritoryDesignerModal } from './components/TerritoryDesignerModal';
 import { FileSpreadsheet } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -70,6 +71,7 @@ export const App: React.FC = () => {
   const [isCampaignsOpen, setIsCampaignsOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isRequestTerritoryOpen, setIsRequestTerritoryOpen] = useState(false);
+  const [isDesignerOpen, setIsDesignerOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   // Chargement global des données
@@ -427,6 +429,14 @@ export const App: React.FC = () => {
     await StorageService.saveTerritories(updated);
   };
 
+  // Sauvegarde des modifications globales de l'Atelier de Découpage (Designer)
+  const handleSaveDesignerTerritories = async (updatedTerritories: Territory[], updatedLocations: LocationItem[]) => {
+    setTerritories(updatedTerritories);
+    setLocations(updatedLocations);
+    await StorageService.saveTerritories(updatedTerritories);
+    await StorageService.saveLocations(updatedLocations);
+  };
+
   if (isLoading) {
     return (
       <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', color: '#38bdf8' }}>
@@ -663,6 +673,7 @@ export const App: React.FC = () => {
               setSelectedTerritory(null);
               setCurrentView('list');
             }}
+            onOpenDesigner={() => setIsDesignerOpen(true)}
           />
         ) : (
           <TerritoryList
@@ -786,6 +797,15 @@ export const App: React.FC = () => {
           onRequestSubmitted={() => {
             // Rechargement éventuel
           }}
+        />
+      )}
+
+      {isDesignerOpen && (
+        <TerritoryDesignerModal
+          territories={territories}
+          locations={locations}
+          onSaveTerritories={handleSaveDesignerTerritories}
+          onClose={() => setIsDesignerOpen(false)}
         />
       )}
     </div>
