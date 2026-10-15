@@ -19,7 +19,8 @@ import {
   Printer,
   Navigation,
   CheckCircle2,
-  MessageCircle
+  MessageCircle,
+  Clock
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { Territory, LocationItem, VisitStatus, FieldNote, FreehandDrawing } from '../types';
@@ -68,7 +69,7 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
   onClearFreehandDrawings
 }) => {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<'streets' | 'map'>('streets');
+  const [activeTab, setActiveTab] = useState<'streets' | 'map' | 'history'>('streets');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'not_at_home' | 'not_visited' | 'visited'>('all');
   const [expandedBuildingId, setExpandedBuildingId] = useState<string | null>(null);
   const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
@@ -436,6 +437,14 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
             <MapPin size={16} />
             Vue Carte GPS
           </button>
+          <button 
+            onClick={() => setActiveTab('history')}
+            className={`btn ${activeTab === 'history' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+          >
+            <Clock size={16} />
+            Historique ({territory.assignmentHistory?.length || (territory.assignee ? 1 : 0)})
+          </button>
         </div>
 
         {activeTab === 'streets' && (
@@ -479,6 +488,121 @@ export const TerritoryDetail: React.FC<TerritoryDetailProps> = ({
             onClearFreehandDrawings={onClearFreehandDrawings}
             onStartDrawing={() => onOpenAnnotate && onOpenAnnotate(territory)}
           />
+        </div>
+      ) : activeTab === 'history' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* Fiche d'attribution active */}
+          <div className="glass-panel" style={{ padding: '1.5rem', borderRadius: '12px', borderLeft: '4px solid #0284c7' }}>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 800, margin: '0 0 0.75rem 0', display: 'flex', alignItems: 'center', gap: 6, color: '#fff' }}>
+              <UserCheck size={18} color="#38bdf8" /> Attribution en cours
+            </h3>
+
+            {territory.assignee ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', background: 'rgba(2, 132, 199, 0.08)', padding: '1rem', borderRadius: '8px' }}>
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Proclamateur</div>
+                  <div style={{ fontSize: '1rem', fontWeight: 800, color: '#38bdf8', marginTop: '2px' }}>{territory.assignee}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Attribué le</div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#fff', marginTop: '2px' }}>
+                    {territory.dateAssigned ? new Date(territory.dateAssigned).toLocaleDateString('fr-FR') : '—'}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Échéance (4 mois)</div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#fbbf24', marginTop: '2px' }}>
+                    {territory.dateDue ? new Date(territory.dateDue).toLocaleDateString('fr-FR') : '—'}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Accusé de réception</div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: territory.receiptAcknowledged ? '#10b981' : '#f59e0b', marginTop: '2px' }}>
+                    {territory.receiptAcknowledged ? '✓ Confirmé' : 'En attente'}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', padding: '0.5rem 0' }}>
+                Ce territoire est actuellement <strong style={{ color: '#10b981' }}>disponible</strong>. Aucun proclamateur ne l'a en charge.
+              </div>
+            )}
+          </div>
+
+          {/* Registre chronologique des parcours passés (S-12) */}
+          <div className="glass-panel" style={{ padding: '1.5rem', borderRadius: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 800, margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Clock size={18} color="#a855f7" /> Registre chronologique des parcours passés (S-12)
+                </h3>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0.2rem 0 0 0' }}>
+                  Historique officiel des frères et sœurs ayant parcouru ce secteur
+                </p>
+              </div>
+            </div>
+
+            {(!territory.assignmentHistory || territory.assignmentHistory.length === 0) ? (
+              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <Clock size={32} style={{ margin: '0 auto 0.5rem auto', opacity: 0.4 }} />
+                <p style={{ fontSize: '0.9rem', fontWeight: 600 }}>Aucune attribution archivée pour ce territoire.</p>
+                <p style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>Les prochaines restitutions de territoire s'inscriront automatiquement ici.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {territory.assignmentHistory.map((item, idx) => (
+                  <div 
+                    key={item.id || idx}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '10px',
+                      padding: '1rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '0.75rem'
+                    }}
+                  >
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#fff' }}>
+                          👤 {item.publisherName}
+                        </span>
+                        {item.serviceGroupName && (
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: '4px' }}>
+                            {item.serviceGroupName}
+                          </span>
+                        )}
+                        <span style={{
+                          fontSize: '0.7rem',
+                          fontWeight: 700,
+                          padding: '1px 6px',
+                          borderRadius: '4px',
+                          background: item.status === 'completed' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                          color: item.status === 'completed' ? '#34d399' : '#fbbf24'
+                        }}>
+                          {item.status === 'completed' ? '✓ Parcouru complètement' : 'Restitué partiel'}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Calendar size={13} />
+                        Du {new Date(item.dateAssigned).toLocaleDateString('fr-FR')} au {item.dateReturned ? new Date(item.dateReturned).toLocaleDateString('fr-FR') : '—'}
+                      </div>
+
+                      {item.notes && (
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.35rem', fontStyle: 'italic' }}>
+                          « {item.notes} »
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>

@@ -125,6 +125,18 @@ export interface Territory {
   receiptAcknowledged?: boolean;       // Accusé de réception confirmé par le proclamateur
   receiptAcknowledgedDate?: string | null;
   lastReminderDate?: string | null;       // Date du dernier rappel/relance envoyé au proclamateur
+  assignmentHistory?: TerritoryAssignmentRecord[]; // Historique chronologique des attributions
+}
+
+export interface TerritoryAssignmentRecord {
+  id: string;
+  territoryId: string;
+  publisherName: string;
+  serviceGroupName?: string;
+  dateAssigned: string;
+  dateReturned?: string | null;
+  status: 'completed' | 'returned_partial' | 'in_progress';
+  notes?: string;
 }
 
 export interface TerritoryRequest {

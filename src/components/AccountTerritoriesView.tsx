@@ -23,7 +23,8 @@ import {
   Scissors,
   MessageCircle,
   Bell,
-  Upload
+  Upload,
+  BarChart3
 } from 'lucide-react';
 import type { 
   Territory, 
@@ -37,6 +38,7 @@ import type {
 import { StorageService } from '../services/storage';
 import { TerritoryReminderModal } from './TerritoryReminderModal';
 import { TerritoryHelperImportModal } from './TerritoryHelperImportModal';
+import { ServiceYearCoverageDashboard } from './ServiceYearCoverageDashboard';
 
 interface AccountTerritoriesViewProps {
   territories: Territory[];
@@ -91,6 +93,9 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
   
   // Modale d'importation depuis Territory Helper (KML, GeoJSON, CSV, JSON)
   const [isImporterModalOpen, setIsImporterModalOpen] = useState(false);
+
+  // Modale du Tableau de Bord Annuel de Couverture S-13
+  const [isCoverageDashboardOpen, setIsCoverageDashboardOpen] = useState(false);
 
   // Modale de rappel / relance proclamateur (WhatsApp / SMS)
   const [reminderTerritory, setReminderTerritory] = useState<Territory | null>(null);
@@ -535,6 +540,26 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
           >
             <Upload size={16} />
             <span>Importer Territory Helper</span>
+          </button>
+
+          {/* Bouton Registre S-13 & Couverture Annuelle */}
+          <button 
+            onClick={() => setIsCoverageDashboardOpen(true)}
+            className="btn btn-secondary"
+            title="Consulter le registre S-13 officiel et les statistiques de couverture de l'année de service"
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem', 
+              fontSize: '0.85rem', 
+              padding: '0.55rem 0.95rem',
+              borderColor: '#6366f1',
+              background: 'rgba(99, 102, 241, 0.15)',
+              color: '#a5b4fc'
+            }}
+          >
+            <BarChart3 size={16} />
+            <span>📊 Couverture S-13</span>
           </button>
 
           {/* Bouton Exporter */}
@@ -1878,6 +1903,25 @@ export const AccountTerritoriesView: React.FC<AccountTerritoriesViewProps> = ({
         <TerritoryHelperImportModal
           onImportComplete={onRefreshData}
           onClose={() => setIsImporterModalOpen(false)}
+        />
+      )}
+
+      {/* Tableau de bord de Couverture Annuelle S-13 */}
+      {isCoverageDashboardOpen && (
+        <ServiceYearCoverageDashboard
+          territories={territories}
+          publishers={publishers}
+          serviceGroups={serviceGroups}
+          congregationName={settings.congregationName || 'Lyon Centre'}
+          onOpenTerritory={(terr) => {
+            setIsCoverageDashboardOpen(false);
+            onOpenTerritory(terr);
+          }}
+          onAssignTerritory={(terr) => {
+            setIsCoverageDashboardOpen(false);
+            onAssignTerritory(terr);
+          }}
+          onClose={() => setIsCoverageDashboardOpen(false)}
         />
       )}
 

@@ -11,7 +11,8 @@ import type {
   LocationTag,
   Publisher,
   FieldNote,
-  TerritoryRequest
+  TerritoryRequest,
+  TerritoryAssignmentRecord
 } from '../types';
 
 localforage.config({
@@ -97,6 +98,37 @@ const INITIAL_TERRITORIES: Territory[] = [
     dateAssigned: '2026-10-01',
     dateDue: '2027-02-01', // Règle officielle 4 mois
     notes: 'Zone historique piétonne, privilégier les samedis matin.',
+    assignmentHistory: [
+      {
+        id: 'hist-01-1',
+        territoryId: 'terr-01',
+        publisherName: 'David Meyer',
+        serviceGroupName: 'Groupe 1 - Saint-Jean',
+        dateAssigned: '2026-04-10',
+        dateReturned: '2026-07-22',
+        status: 'completed',
+        notes: 'Parcouru en totalité avec le groupe. Très bon accueil.'
+      },
+      {
+        id: 'hist-01-2',
+        territoryId: 'terr-01',
+        publisherName: 'Sophie Laurent',
+        serviceGroupName: 'Groupe 2 - Croix-Rousse',
+        dateAssigned: '2025-11-05',
+        dateReturned: '2026-02-18',
+        status: 'completed',
+        notes: 'Toutes les rues faites, notes de code vérifiées.'
+      },
+      {
+        id: 'hist-01-3',
+        territoryId: 'terr-01',
+        publisherName: 'Jean Dupont',
+        serviceGroupName: 'Groupe 1 - Saint-Jean',
+        dateAssigned: '2025-05-12',
+        dateReturned: '2025-08-30',
+        status: 'completed'
+      }
+    ]
   },
   {
     id: 'terr-02',
@@ -118,6 +150,27 @@ const INITIAL_TERRITORIES: Territory[] = [
     dateAssigned: '2026-09-15',
     dateDue: '2027-01-15',
     notes: 'Nombreux traboules et escaliers. Forte concentration dimmeubles.',
+    assignmentHistory: [
+      {
+        id: 'hist-02-1',
+        territoryId: 'terr-02',
+        publisherName: 'Élodie Martin',
+        serviceGroupName: 'Groupe 2 - Croix-Rousse',
+        dateAssigned: '2026-02-01',
+        dateReturned: '2026-05-25',
+        status: 'completed',
+        notes: 'Pentes faites le samedi matin.'
+      },
+      {
+        id: 'hist-02-2',
+        territoryId: 'terr-02',
+        publisherName: 'Marc Laurent',
+        serviceGroupName: 'Groupe 2 - Croix-Rousse',
+        dateAssigned: '2025-09-10',
+        dateReturned: '2026-01-05',
+        status: 'completed'
+      }
+    ]
   },
   {
     id: 'terr-03',
@@ -139,6 +192,27 @@ const INITIAL_TERRITORIES: Territory[] = [
     dateDue: null,
     dateLastCompleted: '2026-08-20',
     notes: 'Commerces et appartements en étages. À parcourir en semaine en fin daprès-midi.',
+    assignmentHistory: [
+      {
+        id: 'hist-03-1',
+        territoryId: 'terr-03',
+        publisherName: 'Alexandre Roux',
+        serviceGroupName: 'Groupe 3 - Presquîle',
+        dateAssigned: '2026-05-02',
+        dateReturned: '2026-08-20',
+        status: 'completed',
+        notes: 'Commerces visités en fin de journée.'
+      },
+      {
+        id: 'hist-03-2',
+        territoryId: 'terr-03',
+        publisherName: 'Nicolas Petit',
+        serviceGroupName: 'Groupe 1 - Saint-Jean',
+        dateAssigned: '2025-10-15',
+        dateReturned: '2026-01-20',
+        status: 'completed'
+      }
+    ]
   }
 ];
 
@@ -417,19 +491,38 @@ export class StorageService {
     await localforage.setItem(SETTINGS_KEY, settings);
   }
 
-  // Restitution d'un territoire avec option de réinitialisation
+  // Restitution d'un territoire avec option de réinitialisation et archivage historique S-12
   static async returnTerritory(territoryId: string, resetStatuses: boolean, notes: string): Promise<void> {
     const territories = await this.getTerritories();
+    const serviceGroups = await this.getServiceGroups();
+    const serviceGroupsMap = new Map(serviceGroups.map(g => [g.id, g.name]));
+    const returnDate = new Date().toISOString().split('T')[0];
+
     const updatedTerritories = territories.map(t => {
       if (t.id === territoryId) {
+        const history: TerritoryAssignmentRecord[] = [...(t.assignmentHistory || [])];
+        if (t.assignee && t.dateAssigned) {
+          history.unshift({
+            id: 'hist-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+            territoryId: t.id,
+            publisherName: t.assignee,
+            serviceGroupName: t.serviceGroupId ? serviceGroupsMap.get(t.serviceGroupId) : undefined,
+            dateAssigned: t.dateAssigned,
+            dateReturned: returnDate,
+            status: resetStatuses ? 'completed' : 'returned_partial',
+            notes: notes || undefined
+          });
+        }
+
         return {
           ...t,
           status: 'available' as const,
           assignee: null,
           dateAssigned: null,
           dateDue: null,
-          dateReturned: new Date().toISOString().split('T')[0],
-          dateLastCompleted: new Date().toISOString().split('T')[0],
+          dateReturned: returnDate,
+          dateLastCompleted: resetStatuses ? returnDate : (t.dateLastCompleted || returnDate),
+          assignmentHistory: history,
           notes: notes ? (t.notes ? `${t.notes}\n[Retour]: ${notes}` : `[Retour]: ${notes}`) : t.notes
         };
       }
