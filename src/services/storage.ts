@@ -84,7 +84,7 @@ const INITIAL_TERRITORIES: Territory[] = [
     boundary: [
       [45.7628, 4.8252],
       [45.7645, 4.8275],
-      [45.7632, 4.8310],
+      [45.7632, 4.8286], // Quai Romain Rolland piéton (exclut le pont Alphonse Juin et la Saône)
       [45.7605, 4.8285],
       [45.7612, 4.8258]
     ],

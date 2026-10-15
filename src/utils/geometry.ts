@@ -315,7 +315,115 @@ export function multiSplitPolygon(
     results.push(remainingPolygon);
   }
 
-  return results.length >= 2 ? results : null;
+  if (results.length < 2) return null;
+  // Assainir chaque sous-secteur découpé pour exclure ponts, cours d'eau et débordements
+  return results.map(p => sanitizeTerritoryBoundary(p));
+}
+
+// Détection et assainissement des zones non exploitables à pied (Ponts, fleuves, parcs non habités, voies ferrées)
+export function sanitizeTerritoryBoundary(boundary: LatLngTuple[]): LatLngTuple[] {
+  if (boundary.length < 3) return boundary;
+
+  const cleaned = boundary.map(([lat, lng]) => {
+    let newLat = lat;
+    let newLng = lng;
+
+    // 1. Détection spécifique Saône / Pont Alphonse Juin (Vieux-Lyon / Saint-Jean) :
+    // La rive droite piétonne le long du Quai Romain Rolland s'arrête à lng ~4.8286.
+    // Tout point situé à l'Est de 4.8286 (ex: 4.8310 sur le pont Alphonse Juin ou Quai Saint-Antoine)
+    // est un débordement inutile sur le fleuve ou le pont. On le recale sur la rive marchable.
+    const isMainlyVieuxLyon = boundary.filter(p => p[1] < 4.8290).length >= boundary.length * 0.5;
+    if (isMainlyVieuxLyon && newLng > 4.8286) {
+      newLng = 4.8286;
+    }
+
+    // 2. Détection Presqu'île (rive gauche de la Saône) : ne pas déborder dans la Saône vers l'Ouest
+    const isMainlyPresquile = boundary.filter(p => p[1] >= 4.8315 && p[1] < 4.8400).length >= boundary.length * 0.5;
+    if (isMainlyPresquile && newLng < 4.8315) {
+      newLng = 4.8315;
+    }
+
+    // 3. Détection Rhône (Quai Jules Courmont / Quai Claude Bernard) : ne pas déborder dans le Rhône
+    if (isMainlyPresquile && newLng > 4.8395) {
+      newLng = 4.8395;
+    }
+
+    return [Number(newLat.toFixed(6)), Number(newLng.toFixed(6))] as LatLngTuple;
+  });
+
+  // Élimination des sommets consécutifs doublons
+  const deduped: LatLngTuple[] = [];
+  for (let i = 0; i < cleaned.length; i++) {
+    const curr = cleaned[i];
+    const prev = deduped[deduped.length - 1];
+    if (!prev || Math.abs(curr[0] - prev[0]) > 0.00005 || Math.abs(curr[1] - prev[1]) > 0.00005) {
+      deduped.push(curr);
+    }
+  }
+
+  // Fermeture propre : vérifier que le dernier point n'est pas identique au premier
+  if (deduped.length > 2) {
+    const first = deduped[0];
+    const last = deduped[deduped.length - 1];
+    if (Math.abs(first[0] - last[0]) < 0.00005 && Math.abs(first[1] - last[1]) < 0.00005) {
+      deduped.pop();
+    }
+  }
+
+  return deduped.length >= 3 ? deduped : boundary;
+}
+
+// Calcul de la charge de travail et évaluation du dimensionnement pour un territoire attribué sur 1 mois
+export function estimateMonthlyWorkload(
+  doorsCount: number,
+  areaM2: number,
+  terrainType: 'urban_dense' | 'residential_dispersed' | 'kbv_linguistic'
+) {
+  let doorsPer2hOuting = 40;
+  if (terrainType === 'residential_dispersed') doorsPer2hOuting = 22; // marche plus longue
+  if (terrainType === 'kbv_linguistic') doorsPer2hOuting = 55; // vérification ciblée des noms
+
+  // Si des adresses sont enregistrées
+  let estimatedOutings = 3;
+  let totalHours = 6;
+  if (doorsCount > 0) {
+    estimatedOutings = Math.max(1, Math.ceil(doorsCount / doorsPer2hOuting));
+    totalHours = estimatedOutings * 2;
+  } else {
+    // Estimation basée sur la surface habitable (excluant ponts/eau)
+    const hectares = areaM2 / 10000;
+    if (terrainType === 'urban_dense') {
+      estimatedOutings = Math.max(2, Math.min(6, Math.round(1.5 + hectares * 1.2)));
+    } else if (terrainType === 'residential_dispersed') {
+      estimatedOutings = Math.max(2, Math.min(6, Math.round(1.2 + hectares * 0.8)));
+    } else {
+      estimatedOutings = Math.max(2, Math.min(5, Math.round(1.5 + hectares * 1.0)));
+    }
+    totalHours = estimatedOutings * 2;
+  }
+
+  // Évaluation de la taille pour 1 mois (doit rester raisonnable : ni trop restreint, ni gigantesque)
+  let sizeStatus: 'optimal' | 'small' | 'large' = 'optimal';
+  let sizeLabel = '✅ Taille idéale (~1 mois)';
+  let sizeAdvice = 'Parfaitement calibré pour 3 à 5 sorties de 2h dans le mois.';
+
+  if (estimatedOutings < 3) {
+    sizeStatus = 'small';
+    sizeLabel = 'ℹ️ Petit territoire (1 à 2 sorties)';
+    sizeAdvice = 'Sera terminé rapidement en début de mois.';
+  } else if (estimatedOutings > 5) {
+    sizeStatus = 'large';
+    sizeLabel = '⚠️ Très étendu (> 5 sorties)';
+    sizeAdvice = 'Risque de ne pas être terminé en 1 mois par un seul binôme.';
+  }
+
+  return {
+    estimatedOutings,
+    totalHours,
+    sizeStatus,
+    sizeLabel,
+    sizeAdvice
+  };
 }
 
 // Convertisseur GeoJSON pour export officiel

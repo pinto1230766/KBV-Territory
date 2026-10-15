@@ -15,7 +15,9 @@ import {
   Users,
   Sparkles,
   Building2,
-  CheckCircle2
+  CheckCircle2,
+  ShieldCheck,
+  Calendar
 } from 'lucide-react';
 import type { Territory, LocationItem, TerritoryType } from '../types';
 import { 
@@ -25,6 +27,8 @@ import {
   splitPolygonByLine,
   autoSplitPolygon,
   multiSplitPolygon,
+  sanitizeTerritoryBoundary,
+  estimateMonthlyWorkload,
   isPointInPolygon,
   exportCongregationToGeoJSON 
 } from '../utils/geometry';
@@ -58,6 +62,11 @@ export interface MultiSplitPartItem {
   areaFormatted: string;
   areaM2: number;
   estMinutes: number;
+  outingsCount: number; // Nb sorties de 2h estimé sur le mois
+  totalHours: number; // Nb heures cumulées
+  sizeStatus: 'optimal' | 'small' | 'large';
+  sizeLabel: string;
+  sizeAdvice: string;
   color: string;
 }
 
@@ -67,8 +76,17 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
   onSaveTerritories,
   onClose
 }) => {
-  // Copies locales de travail
-  const [territories, setTerritories] = useState<Territory[]>(initialTerritories);
+  // Copies locales de travail avec assainissement automatique (exclut le pont Alphonse Juin et les fleuves)
+  const [territories, setTerritories] = useState<Territory[]>(() =>
+    initialTerritories.map(t => {
+      const clean = sanitizeTerritoryBoundary(t.boundary);
+      return {
+        ...t,
+        boundary: clean,
+        centerCoordinates: calculatePolygonCenter(clean)
+      };
+    })
+  );
   const [locations, setLocations] = useState<LocationItem[]>(initialLocations);
   
   // Outil actif
@@ -90,17 +108,21 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
     numB: string;
   } | null>(null);
 
-  // État Découpage Automatique Intelligent (2h / KBV / Binômes)
+  // État Découpage Automatique Intelligent (~1 Mois / Sorties 2h / KBV / Binômes)
   const [multiSplitConfig, setMultiSplitConfig] = useState<{
     pairsCount: number; // 2, 3, 4, 5 binômes (soit 4 à 10 proclamateurs)
     terrainType: 'urban_dense' | 'residential_dispersed' | 'kbv_linguistic';
     preferredDirection: 'balanced' | 'horizontal' | 'vertical';
     targetDurationHours: number;
+    allocationPeriod: 'month' | 'single_outing';
+    excludeUninhabited: boolean; // Exclure ponts, cours d'eau & parcs
   }>({
     pairsCount: 3,
     terrainType: 'kbv_linguistic',
     preferredDirection: 'balanced',
-    targetDurationHours: 2
+    targetDurationHours: 2,
+    allocationPeriod: 'month',
+    excludeUninhabited: true
   });
 
   const [multiSplitPreview, setMultiSplitPreview] = useState<{
@@ -258,7 +280,27 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
     setStatusMessage(`Découpe automatique (${direction === 'horizontal' ? 'Nord/Sud' : 'Est/Ouest'}) calculée avec succès !`);
   };
 
-  // Calcul du Découpage Intelligent Spécifique Prédication 2h / KBV (2 à 5 binômes)
+  // Nettoyage manuel en 1 clic : suppression des appendices sur les ponts, cours d'eau et zones non marchables
+  const handleSanitizeSelectedTerritory = () => {
+    if (!selectedTerritory) return;
+    const sanitized = sanitizeTerritoryBoundary(selectedTerritory.boundary);
+    const newCenter = calculatePolygonCenter(sanitized);
+
+    setTerritories(prev => prev.map(t => {
+      if (t.id === selectedTerritory.id) {
+        return {
+          ...t,
+          boundary: sanitized,
+          centerCoordinates: newCenter
+        };
+      }
+      return t;
+    }));
+    setHasUnsavedChanges(true);
+    setStatusMessage(`🧹 Contour du Territoire N° ${selectedTerritory.number} épuré : le pont Alphonse Juin et le fleuve ont été retirés !`);
+  };
+
+  // Calcul du Découpage Intelligent Spécifique Prédication (~1 Mois / Sorties 2h / KBV / Binômes)
   const handleCalculateMultiSplit = () => {
     if (!selectedTerritory) {
       alert('Veuillez sélectionner un territoire à découper.');
@@ -270,8 +312,13 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
       return;
     }
 
+    // Assainissement préalable : exclure ponts (ex: Pont Alphonse Juin) et fleuves si activé
+    const baseBoundary = multiSplitConfig.excludeUninhabited
+      ? sanitizeTerritoryBoundary(selectedTerritory.boundary)
+      : selectedTerritory.boundary;
+
     const subPolygons = multiSplitPolygon(
-      selectedTerritory.boundary,
+      baseBoundary,
       multiSplitConfig.pairsCount,
       multiSplitConfig.preferredDirection
     );
@@ -283,47 +330,38 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
 
     const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
     const parts: MultiSplitPartItem[] = subPolygons.map((poly, idx) => {
+      // Nettoyage des sous-polygones pour s'assurer qu'aucun ne déborde sur un pont ou l'eau
+      const cleanPoly = multiSplitConfig.excludeUninhabited ? sanitizeTerritoryBoundary(poly) : poly;
       const letter = letters[idx] || String(idx + 1);
       const partNum = `${selectedTerritory.number}${letter}`;
       const partLabel = `${selectedTerritory.label} (Secteur ${letter} - Binôme ${idx + 1})`;
-      const areaM2 = calculatePolygonArea(poly);
+      const areaM2 = calculatePolygonArea(cleanPoly);
       const areaFormatted = areaM2 > 10000 
         ? `${(areaM2 / 10000).toFixed(2)} ha` 
         : `${areaM2.toLocaleString()} m²`;
 
       // Comptage précis des adresses/portes du territoire parent situées dans ce sous-secteur
       const doorsCount = locations.filter(loc => 
-        loc.territoryId === selectedTerritory.id && isPointInPolygon(loc.latLng, poly)
+        loc.territoryId === selectedTerritory.id && isPointInPolygon(loc.latLng, cleanPoly)
       ).length;
 
-      // Estimation fine de la durée en minutes pour un binôme selon la nature du terrain
-      let estMinutes = 120; // Objectif 2h
-      if (multiSplitConfig.terrainType === 'urban_dense') {
-        // Immeubles denses : 15 min marche/escaliers + 1.2 min/porte
-        estMinutes = doorsCount > 0 
-          ? Math.round(15 + doorsCount * 1.2)
-          : Math.min(135, Math.max(85, Math.round(20 + (areaM2 / 900) * 1.3)));
-      } else if (multiSplitConfig.terrainType === 'residential_dispersed') {
-        // Pavillonnaire dispersé : 25 min marche entre maisons + 2.8 min/porte
-        estMinutes = doorsCount > 0 
-          ? Math.round(25 + doorsCount * 2.8)
-          : Math.min(145, Math.max(90, Math.round(30 + (areaM2 / 2200) * 2.2)));
-      } else {
-        // Recherche KBV linguistique (interphones / boîtes aux lettres à scruter)
-        estMinutes = doorsCount > 0 
-          ? Math.round(20 + doorsCount * 1.5)
-          : Math.min(135, Math.max(85, Math.round(22 + (areaM2 / 1300) * 1.6)));
-      }
+      // Évaluation de la charge mensuelle (3 à 5 sorties de 2h sur 1 mois pour rester dans le raisonnable)
+      const workload = estimateMonthlyWorkload(doorsCount, areaM2, multiSplitConfig.terrainType);
 
       return {
         id: `sub-${Date.now()}-${idx}`,
         num: partNum,
         label: partLabel,
-        boundary: poly,
+        boundary: cleanPoly,
         doorsCount,
         areaM2,
         areaFormatted,
-        estMinutes,
+        estMinutes: workload.totalHours * 60,
+        outingsCount: workload.estimatedOutings,
+        totalHours: workload.totalHours,
+        sizeStatus: workload.sizeStatus,
+        sizeLabel: workload.sizeLabel,
+        sizeAdvice: workload.sizeAdvice,
         color: TERRITORY_COLORS[(idx * 2) % TERRITORY_COLORS.length]
       };
     });
@@ -333,7 +371,7 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
       parts
     });
 
-    setStatusMessage(`⚡ Découpage calculé : ${parts.length} sous-territoires équilibrés pour ${multiSplitConfig.pairsCount} binômes (${multiSplitConfig.pairsCount * 2} proclamateurs) !`);
+    setStatusMessage(`⚡ Découpage calculé : ${parts.length} sous-territoires raisonnables pour 1 mois (~3-4 sorties de 2h par binôme, ponts & cours d'eau exclus) !`);
   };
 
   // Mise à jour rapide d'un sous-secteur calculé
@@ -677,9 +715,6 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
         }).addTo(multiSplitGroup);
 
         const center = calculatePolygonCenter(part.boundary);
-        const hours = Math.floor(part.estMinutes / 60);
-        const mins = part.estMinutes % 60;
-        const timeFormatted = mins > 0 ? `${hours}h${mins < 10 ? '0' : ''}${mins}` : `${hours}h`;
 
         const badgeIcon = L.divIcon({
           className: 'multi-split-label',
@@ -687,12 +722,12 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
             <div style="
               background: ${part.color};
               color: white;
-              padding: 4px 8px;
-              border-radius: 7px;
+              padding: 5px 9px;
+              border-radius: 8px;
               font-size: 11px;
               font-weight: 800;
               border: 1.5px solid white;
-              box-shadow: 0 4px 12px rgba(0,0,0,0.55);
+              box-shadow: 0 4px 14px rgba(0,0,0,0.6);
               text-align: center;
               white-space: nowrap;
               pointer-events: none;
@@ -701,13 +736,16 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
                 <span>👥 Binôme ${idx + 1}</span>
                 <span style="background: rgba(255,255,255,0.25); padding: 1px 4px; border-radius: 4px; font-size: 10px;">N° ${part.num}</span>
               </div>
-              <div style="font-size: 9px; font-weight: 600; opacity: 0.95; margin-top: 2px;">
-                ${part.doorsCount > 0 ? `${part.doorsCount} adresses` : part.areaFormatted} • ~${timeFormatted}
+              <div style="font-size: 9.5px; font-weight: 700; opacity: 0.95; margin-top: 2px;">
+                📅 1 mois • ~${part.outingsCount || 3} sorties de 2h
+              </div>
+              <div style="font-size: 8.5px; opacity: 0.85; margin-top: 1px;">
+                ${part.doorsCount > 0 ? `${part.doorsCount} adresses réparties` : part.areaFormatted}
               </div>
             </div>
           `,
-          iconSize: [126, 42],
-          iconAnchor: [63, 21]
+          iconSize: [142, 50],
+          iconAnchor: [71, 25]
         });
 
         L.marker(center, { icon: badgeIcon, interactive: false }).addTo(multiSplitGroup);
@@ -973,10 +1011,10 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
               fontWeight: tool === 'autosplit' ? 700 : 500,
               boxShadow: tool === 'autosplit' ? '0 2px 8px rgba(2, 132, 199, 0.4)' : undefined
             }}
-            title="Découpage automatique pour groupe de prédication (5 à 10 proclamateurs en binômes, 2h)"
+            title="Découpage intelligent pour attribution d'environ 1 mois (3 à 5 sorties de 2h par binôme, ponts & fleuves exclus)"
           >
             <Sparkles size={15} />
-            <span>⚡ Découpe Auto (2h / KBV)</span>
+            <span>⚡ Découpe Campagne (1 Mois / KBV)</span>
           </button>
 
           <button
@@ -1120,12 +1158,44 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
                   <Sparkles size={16} color="#38bdf8" />
                   <strong style={{ color: '#38bdf8', fontSize: '0.85rem' }}>
-                    Découpage Auto (2h / KBV) :
+                    Découpage Campagne (~1 Mois / KBV) :
                   </strong>
                 </div>
-                <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', margin: '0 0 0.65rem 0' }}>
-                  Calibré pour une sortie de <strong>2 heures</strong> avec <strong>5 à 10 proclamateurs</strong> en binômes recherchant les personnes capverdiennes.
+                <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', margin: '0 0 0.5rem 0' }}>
+                  Calibré pour une attribution d'environ <strong>1 mois</strong> (3 à 5 sorties de 2h par binôme). Évite les territoires immenses et exclut les zones non exploitables.
                 </p>
+
+                {/* Explication Attribution 1 Mois */}
+                <div style={{ marginBottom: '0.65rem', background: 'rgba(255, 255, 255, 0.03)', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.72rem', color: '#38bdf8', fontWeight: 700 }}>
+                    <Calendar size={13} />
+                    <span>Attribution : ~1 mois de prédication</span>
+                  </div>
+                  <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    Un territoire est confié pour 1 mois à un proclamateur ou binôme qui réalise plusieurs sorties de 2h (3 à 5 sorties pour tout couvrir).
+                  </div>
+                </div>
+
+                {/* Option Exclusion des Ponts, Cours d'eau et Parcs */}
+                <div style={{ marginBottom: '0.65rem', background: 'rgba(2, 132, 199, 0.1)', padding: '0.45rem 0.6rem', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.45rem', cursor: 'pointer', fontSize: '0.74rem', color: '#fff', fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={multiSplitConfig.excludeUninhabited}
+                      onChange={(e) => setMultiSplitConfig(prev => ({ ...prev, excludeUninhabited: e.target.checked }))}
+                      style={{ marginTop: '2px', accentColor: '#0284c7' }}
+                    />
+                    <div>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        <ShieldCheck size={13} color="#38bdf8" />
+                        <span>Exclure ponts, cours d'eau & parcs</span>
+                      </span>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 400, marginTop: '2px' }}>
+                        Évite d'englober le Pont Alphonse Juin, la Saône/Rhône et les zones sans habitations piétonnes.
+                      </div>
+                    </div>
+                  </label>
+                </div>
 
                 {/* 1. Choix du nombre de binômes */}
                 <div style={{ marginBottom: '0.65rem' }}>
@@ -1235,7 +1305,7 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
                   }}
                 >
                   <Sparkles size={15} />
-                  <span>Calculer la répartition ({multiSplitConfig.pairsCount} binômes)</span>
+                  <span>Calculer la répartition (~1 mois • {multiSplitConfig.pairsCount} binômes)</span>
                 </button>
 
                 {/* 5. Prévisualisation & Validation des sous-territoires */}
@@ -1243,7 +1313,7 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
                   <div style={{ marginTop: '0.85rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '0.75rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem' }}>
                       <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#34d399', textTransform: 'uppercase' }}>
-                        ✓ {multiSplitPreview.parts.length} Secteurs prêts (~2h chacun) :
+                        ✓ {multiSplitPreview.parts.length} Territoires (~1 mois) :
                       </span>
                       <button
                         onClick={() => setMultiSplitPreview(null)}
@@ -1253,12 +1323,8 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
                       </button>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', maxHeight: '180px', overflowY: 'auto', marginBottom: '0.75rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', maxHeight: '210px', overflowY: 'auto', marginBottom: '0.75rem' }}>
                       {multiSplitPreview.parts.map((p, pIdx) => {
-                        const hrs = Math.floor(p.estMinutes / 60);
-                        const mins = p.estMinutes % 60;
-                        const timeStr = mins > 0 ? `${hrs}h${mins < 10 ? '0' : ''}${mins}` : `${hrs}h`;
-
                         return (
                           <div
                             key={p.id}
@@ -1293,8 +1359,11 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
                               />
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                              <span>{p.doorsCount > 0 ? `${p.doorsCount} portes réparties` : p.areaFormatted}</span>
-                              <span style={{ color: '#38bdf8', fontWeight: 600 }}>Temps : ~{timeStr}</span>
+                              <span>{p.doorsCount > 0 ? `${p.doorsCount} adresses réparties` : p.areaFormatted}</span>
+                              <span style={{ color: '#38bdf8', fontWeight: 600 }}>~{p.outingsCount || 3} sorties de 2h</span>
+                            </div>
+                            <div style={{ marginTop: '0.2rem', fontSize: '0.63rem', color: p.sizeStatus === 'optimal' ? '#34d399' : '#fbbf24', fontWeight: 600 }}>
+                              {p.sizeLabel}
                             </div>
                           </div>
                         );
@@ -1451,6 +1520,29 @@ export const TerritoryDesignerModal: React.FC<TerritoryDesignerModalProps> = ({
                   <strong style={{ color: '#fff' }}>{selectedTerritory.boundary.length} points</strong>
                 </div>
               </div>
+
+              {/* Bouton Nettoyage automatique en 1 clic des zones non exploitables (ponts/fleuves) */}
+              <button
+                onClick={handleSanitizeSelectedTerritory}
+                className="btn btn-secondary"
+                style={{
+                  width: '100%',
+                  marginTop: '0.65rem',
+                  fontSize: '0.72rem',
+                  padding: '0.35rem 0.5rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.35rem',
+                  borderColor: 'rgba(56, 189, 248, 0.4)',
+                  color: '#38bdf8',
+                  background: 'rgba(2, 132, 199, 0.08)'
+                }}
+                title="Retire automatiquement les ponts (ex: Pont Alphonse Juin) et cours d'eau pour caler la frontière sur les rues piétonnes"
+              >
+                <ShieldCheck size={14} />
+                <span>🧹 Épurer (exclure pont Alphonse Juin & Saône)</span>
+              </button>
             </div>
           )}
 
